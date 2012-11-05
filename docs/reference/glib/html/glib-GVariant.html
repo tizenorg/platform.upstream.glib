@@ -8,7 +8,7 @@
 <link rel="up" href="glib-data-types.html" title="GLib Data Types">
 <link rel="prev" href="glib-GVariantType.html" title="GVariantType">
 <link rel="next" href="gvariant-format-strings.html" title="GVariant Format Strings">
-<meta name="generator" content="GTK-Doc V1.18.1 (XML mode)">
+<meta name="generator" content="GTK-Doc V1.18 (XML mode)">
 <link rel="stylesheet" href="style.css" type="text/css">
 </head>
 <body bgcolor="white" text="black" link="#0000FF" vlink="#840084" alink="#0000FF">
@@ -299,7 +299,7 @@ with type inferencing.
 <p>
 </p>
 <div class="refsect2">
-<a name="idp61883568"></a><h3>Memory Use</h3>
+<a name="idp61813872"></a><h3>Memory Use</h3>
 <p>
   <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> tries to be quite efficient with respect to memory use.
   This section gives a rough idea of how much memory is used by the
@@ -381,7 +381,7 @@ with type inferencing.
   </p>
 </div>
 <div class="refsect3">
-<a name="idp61895520"></a><h4>Type Information Cache</h4>
+<a name="idp61825824"></a><h4>Type Information Cache</h4>
 <p>
    For each GVariant type that currently exists in the program a type
    information structure is kept in the type information cache.  The
@@ -436,7 +436,7 @@ with type inferencing.
   </p>
 </div>
 <div class="refsect3">
-<a name="idp61903904"></a><h4>Buffer Management Memory</h4>
+<a name="idp61834208"></a><h4>Buffer Management Memory</h4>
 <p>
    <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> uses an internal buffer management structure to deal
    with the various different possible sources of serialised data
@@ -452,7 +452,7 @@ with type inferencing.
   </p>
 </div>
 <div class="refsect3">
-<a name="idp61910400"></a><h4>GVariant structure</h4>
+<a name="idp61840704"></a><h4>GVariant structure</h4>
 <p>
    The size of a <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> structure is 6 * (void *).  On 32 bit
    systems, that's 24 bytes.
@@ -477,7 +477,7 @@ with type inferencing.
   </p>
 </div>
 <div class="refsect3">
-<a name="idp61917792"></a><h4>Summary</h4>
+<a name="idp61848096"></a><h4>Summary</h4>
 <p>
    To put the entire example together, for our dictionary mapping
    strings to variants (with two entries, as given above), we are
@@ -861,12 +861,12 @@ general.
 <tbody>
 <tr>
 <td><p><span class="term"><em class="parameter"><code>one</code></em> :</span></p></td>
-<td>a basic-typed <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> instance. <span class="annotation">[<acronym title="Override the parsed C type with given type."><span class="acronym">type</span></acronym> GVariant]</span>
+<td>a basic-typed <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> instance. <span class="annotation">[<acronym title="Override the parsed C type with given type"><span class="acronym">type</span></acronym> GVariant]</span>
 </td>
 </tr>
 <tr>
 <td><p><span class="term"><em class="parameter"><code>two</code></em> :</span></p></td>
-<td>a <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> instance of the same type. <span class="annotation">[<acronym title="Override the parsed C type with given type."><span class="acronym">type</span></acronym> GVariant]</span>
+<td>a <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> instance of the same type. <span class="annotation">[<acronym title="Override the parsed C type with given type"><span class="acronym">type</span></acronym> GVariant]</span>
 </td>
 </tr>
 <tr>
@@ -3662,7 +3662,7 @@ function with <a class="link" href="glib-Hash-Tables.html#GHashTable" title="GHa
 <tbody>
 <tr>
 <td><p><span class="term"><em class="parameter"><code>value</code></em> :</span></p></td>
-<td>a basic <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> value as a <a class="link" href="glib-Basic-Types.html#gconstpointer" title="gconstpointer"><span class="type">gconstpointer</span></a>. <span class="annotation">[<acronym title="Override the parsed C type with given type."><span class="acronym">type</span></acronym> GVariant]</span>
+<td>a basic <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> value as a <a class="link" href="glib-Basic-Types.html#gconstpointer" title="gconstpointer"><span class="type">gconstpointer</span></a>. <span class="annotation">[<acronym title="Override the parsed C type with given type"><span class="acronym">type</span></acronym> GVariant]</span>
 </td>
 </tr>
 <tr>
@@ -3694,12 +3694,12 @@ this function with <a class="link" href="glib-Hash-Tables.html#GHashTable" title
 <tbody>
 <tr>
 <td><p><span class="term"><em class="parameter"><code>one</code></em> :</span></p></td>
-<td>a <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> instance. <span class="annotation">[<acronym title="Override the parsed C type with given type."><span class="acronym">type</span></acronym> GVariant]</span>
+<td>a <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> instance. <span class="annotation">[<acronym title="Override the parsed C type with given type"><span class="acronym">type</span></acronym> GVariant]</span>
 </td>
 </tr>
 <tr>
 <td><p><span class="term"><em class="parameter"><code>two</code></em> :</span></p></td>
-<td>a <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> instance. <span class="annotation">[<acronym title="Override the parsed C type with given type."><span class="acronym">type</span></acronym> GVariant]</span>
+<td>a <a class="link" href="glib-GVariant.html#GVariant" title="GVariant"><span class="type">GVariant</span></a> instance. <span class="annotation">[<acronym title="Override the parsed C type with given type"><span class="acronym">type</span></acronym> GVariant]</span>
 </td>
 </tr>
 <tr>
@@ -3987,7 +3987,7 @@ you no longer need it.
 <p>
 </p>
 <div class="example">
-<a name="idp63939600"></a><p class="title"><b>Example 18. Iterating with <a class="link" href="glib-GVariant.html#g-variant-iter-next-value" title="g_variant_iter_next_value ()"><code class="function">g_variant_iter_next_value()</code></a></b></p>
+<a name="idp63872000"></a><p class="title"><b>Example 18. Iterating with <a class="link" href="glib-GVariant.html#g-variant-iter-next-value" title="g_variant_iter_next_value ()"><code class="function">g_variant_iter_next_value()</code></a></b></p>
 <div class="example-contents">
   <table class="listing_frame" border="0" cellpadding="0" cellspacing="0">
     <tbody>
@@ -4082,7 +4082,7 @@ Format Strings</GTKDOCLINK>.
 <p>
 </p>
 <div class="example">
-<a name="idp63968064"></a><p class="title"><b>Example 19. Memory management with <a class="link" href="glib-GVariant.html#g-variant-iter-next" title="g_variant_iter_next ()"><code class="function">g_variant_iter_next()</code></a></b></p>
+<a name="idp63900464"></a><p class="title"><b>Example 19. Memory management with <a class="link" href="glib-GVariant.html#g-variant-iter-next" title="g_variant_iter_next ()"><code class="function">g_variant_iter_next()</code></a></b></p>
 <div class="example-contents">
   <table class="listing_frame" border="0" cellpadding="0" cellspacing="0">
     <tbody>
@@ -4213,7 +4213,7 @@ Format Strings</GTKDOCLINK>.
 <p>
 </p>
 <div class="example">
-<a name="idp64010272"></a><p class="title"><b>Example 20. Memory management with <a class="link" href="glib-GVariant.html#g-variant-iter-loop" title="g_variant_iter_loop ()"><code class="function">g_variant_iter_loop()</code></a></b></p>
+<a name="idp63942672"></a><p class="title"><b>Example 20. Memory management with <a class="link" href="glib-GVariant.html#g-variant-iter-loop" title="g_variant_iter_loop ()"><code class="function">g_variant_iter_loop()</code></a></b></p>
 <div class="example-contents">
   <table class="listing_frame" border="0" cellpadding="0" cellspacing="0">
     <tbody>
@@ -5137,6 +5137,6 @@ GVariantType
 </div>
 <div class="footer">
 <hr>
-          Generated by GTK-Doc V1.18.1</div>
+          Generated by GTK-Doc V1.18</div>
 </body>
 </html>

@@ -269,7 +269,6 @@ end_element (GMarkupParseContext  *context,
       if (state->preproc_options)
         {
           gchar **options;
-          gchar *stderr_child = NULL;
           guint i;
           gboolean xml_stripblanks = FALSE;
           gboolean to_pixdata = FALSE;
@@ -296,6 +295,7 @@ end_element (GMarkupParseContext  *context,
             {
               gchar *argv[8];
               int status, fd, argc;
+              gchar *stderr_child = NULL;
 
               tmp_file = g_strdup ("resource-XXXXXXXX");
               if ((fd = g_mkstemp (tmp_file)) == -1)
@@ -334,6 +334,7 @@ end_element (GMarkupParseContext  *context,
                 {
                   g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
                                _("Error processing input file with xmllint:\n%s"), stderr_child);
+                  g_free (stderr_child);
                   goto cleanup;
                 }
 
@@ -389,6 +390,7 @@ end_element (GMarkupParseContext  *context,
                 {
                   g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
 			       _("Error processing input file with to-pixdata:\n%s"), stderr_child);
+                  g_free (stderr_child);
                   goto cleanup;
                 }
 
