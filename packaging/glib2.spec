@@ -25,7 +25,7 @@ BuildRequires:  automake
 BuildRequires:  fdupes
 BuildRequires:  gcc-c++
 BuildRequires:  pkg-config
-BuildRequires:  python-base
+BuildRequires:  python
 BuildRequires:  gettext-tools
 # gdbus-codegen is run during the build, so we need python-xml
 BuildRequires:  python-xml
