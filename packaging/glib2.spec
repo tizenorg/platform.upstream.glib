@@ -20,7 +20,6 @@ Source6:        macros.glib2
 # Please update this file from the latest gtk-doc package:
 Source7:        gtk-doc.m4
 Source99:       baselibs.conf
-# PATCH-FIX-OPENSUSE glib2-suppress-schema-deprecated-path-warning.patch rh#814053 badshah400@gmail.com -- Suppress the deprecated path warning since it fills up screen unnecessarily during package installations/upgrade.
 BuildRequires:  automake
 BuildRequires:  fdupes
 BuildRequires:  gcc-c++
@@ -30,7 +29,6 @@ BuildRequires:  gettext-tools
 # gdbus-codegen is run during the build, so we need python-xml
 BuildRequires:  python-xml
 %if 0%{?with_systemtap}
-# systemtap-sdt-devel on openSUSE 11.3 was missing a Requires: python.
 BuildRequires:  systemtap-sdt-devel
 %endif
 # Needed for gresource
