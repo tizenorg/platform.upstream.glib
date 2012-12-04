@@ -349,17 +349,11 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %{_libdir}/gdbus-2.0/codegen/
 %{_libdir}/glib-2.0/include/
 %{_libdir}/pkgconfig/*.pc
-%{_datadir}/gtk-doc/html/gio
-%{_datadir}/gtk-doc/html/glib
-%{_datadir}/gtk-doc/html/gobject
 %{_datadir}/gdb/auto-load/%{_libdir}/*-gdb.py
 %if 0%{?with_systemtap}
 %{_datadir}/systemtap/tapset/*.stp
 %endif
 %{_sysconfdir}/rpm/macros.glib2
-# Own these directories to not depend on gtk-doc while building:
-%dir %{_datadir}/gtk-doc
-%dir %{_datadir}/gtk-doc/html
 # Own these directories to not depend on gdb
 %dir %{_datadir}/gdb
 %dir %{_datadir}/gdb/auto-load
