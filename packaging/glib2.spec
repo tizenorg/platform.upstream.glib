@@ -197,6 +197,7 @@ NOCONFIGURE=1 ./autogen.sh
 %endif
 
 %build
+%autogen
 %configure \
     --enable-static \
 %if 0%{?with_systemtap}
