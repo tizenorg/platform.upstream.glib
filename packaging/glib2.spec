@@ -192,12 +192,9 @@ cp -a %{S:4} gnome_defaults.conf
 if ! test -f %{_datadir}/aclocal/gtk-doc.m4 ; then
     cp -a %{S:7} m4macros/
 fi
-%if 0%{?BUILD_FROM_VCS}
-NOCONFIGURE=1 ./autogen.sh
-%endif
 
 %build
-%autogen
+NOCONFIGURE=1 ./autogen.sh
 %configure \
     --enable-static \
 %if 0%{?with_systemtap}
@@ -206,9 +203,6 @@ NOCONFIGURE=1 ./autogen.sh
     --with-pcre=system
 
 %{__make} %{?_smp_mflags} V=1
-%if 0%{?BUILD_FROM_VCS}
-%{__make} ChangeLog
-%endif
 
 %check
 # make check does not work on x86_64. See http://bugzilla.gnome.org/show_bug.cgi?id=554969
@@ -324,7 +318,6 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 
 %files devel
 %defattr(-,root,root)
-%doc ChangeLog
 %{_bindir}/gdbus-codegen
 %{_bindir}/glib-compile-resources
 %{_bindir}/glib-genmarshal
