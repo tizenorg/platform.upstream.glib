@@ -310,11 +310,9 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 
 %files devel
 %defattr(-,root,root)
-
 %{_bindir}/gdbus-codegen
 %{_datadir}/bash-completion/completions/*
 %_datadir/glib-2.0/codegen
-
 %{_bindir}/glib-compile-resources
 %{_bindir}/glib-genmarshal
 %{_bindir}/glib-gettextize
