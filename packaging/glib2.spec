@@ -273,7 +273,7 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 
 %files -n libglib
 %defattr(-, root, root)
-%doc COPYING
+%license COPYING
 %{_libdir}/libglib*.so.*
 
 %files -n libgmodule
