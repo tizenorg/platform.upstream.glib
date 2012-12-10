@@ -28,7 +28,6 @@
  * MT safe
  */
 
-BLAH
 #include "config.h"
 
 #include "gmem.h"
