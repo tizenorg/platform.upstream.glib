@@ -20,6 +20,8 @@ Source6:        macros.glib2
 # Please update this file from the latest gtk-doc package:
 Source7:        gtk-doc.m4
 Source99:       baselibs.conf
+BuildRequires:  linux-glibc-devel
+BuildRequires:  glibc-devel
 BuildRequires:  automake
 BuildRequires:  fdupes
 BuildRequires:  gcc-c++
