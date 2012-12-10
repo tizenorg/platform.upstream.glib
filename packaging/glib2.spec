@@ -20,8 +20,6 @@ Source6:        macros.glib2
 # Please update this file from the latest gtk-doc package:
 Source7:        gtk-doc.m4
 Source99:       baselibs.conf
-BuildRequires:  linux-glibc-devel
-BuildRequires:  glibc-devel
 BuildRequires:  automake
 BuildRequires:  fdupes
 BuildRequires:  gcc-c++
@@ -38,13 +36,6 @@ BuildRequires:  pkgconfig(libelf) >= 0.8.12
 BuildRequires:  pkgconfig(libffi)
 BuildRequires:  pkgconfig(libpcre)
 BuildRequires:  pkgconfig(zlib)
-%if 0%{?BUILD_FROM_VCS}
-# It's important to keep those BuildRequires inside
-# BUILD_FROM_VCS to avoid build loops in Factory
-BuildRequires:  git-core
-BuildRequires:  gtk-doc
-%endif
-BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 
 %description
 GLib is a general-purpose utility library, which provides many useful
@@ -319,6 +310,11 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 
 %files devel
 %defattr(-,root,root)
+
+%{_bindir}/gdbus-codegen
+%{_datadir}/bash-completion/completions/*
+%_datadir/glib-2.0/codegen
+
 %{_bindir}/glib-compile-resources
 %{_bindir}/glib-genmarshal
 %{_bindir}/glib-gettextize
