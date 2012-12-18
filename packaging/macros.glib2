@@ -31,12 +31,12 @@ Requires(post): glib2-tools                                     \
 Requires(postun): glib2-tools
 
 %glib2_gsettings_schema_post                                    \
-%{_bindir}/glib-compile-schemas %{_datadir}/glib-2.0/schemas
+%{_bindir}/glib-compile-schemas %{_datadir}/glib-2.0/schemas &> /dev/null || :
 
 # Note: we ignore upgrades (already handled in %post of the new package).
 %glib2_gsettings_schema_postun                                  \
 if [ $1 -eq 0 ]; then                                           \
-  %{_bindir}/glib-compile-schemas %{_datadir}/glib-2.0/schemas  \
+  %{_bindir}/glib-compile-schemas %{_datadir}/glib-2.0/schemas &> /dev/null || : \
 fi
 
 %glib2_gio_module_requires                                      \
