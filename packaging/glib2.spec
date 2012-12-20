@@ -262,7 +262,6 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %defattr(-,root,root)
 %dir %{_datadir}/bash-completion
 %dir %{_datadir}/bash-completion/completions
-%{_datadir}/bash-completion/completions/gdbus
 %{_datadir}/bash-completion/completions/gresource
 %{_datadir}/bash-completion/completions/gsettings
 %{_bindir}/gdbus
@@ -318,7 +317,6 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 
 %files devel
 %defattr(-,root,root)
-%{_bindir}/gdbus-codegen
 %{_bindir}/glib-compile-resources
 %{_bindir}/glib-genmarshal
 %{_bindir}/glib-gettextize
@@ -338,8 +336,6 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %{_includedir}/gio-unix-2.0
 %{_libdir}/lib*.so
 %dir %{_libdir}/glib-2.0/
-%dir %{_libdir}/gdbus-2.0/
-%{_libdir}/gdbus-2.0/codegen/
 %{_libdir}/glib-2.0/include/
 %{_libdir}/pkgconfig/*.pc
 %{_datadir}/gdb/auto-load/%{_libdir}/*-gdb.py
