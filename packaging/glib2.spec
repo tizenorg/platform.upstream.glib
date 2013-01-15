@@ -3,7 +3,7 @@
 
 Name:           glib2
 %define _name glib
-Version:        2.35.3
+Version:        2.35.4
 Release:        0
 # FIXME: find out if tapsets should really be in devel package or in main package
 Summary:        General-Purpose Utility Library
