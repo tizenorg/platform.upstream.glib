@@ -1,3 +1,6 @@
+* Thu Jan 31 2013 Anas Nashif <anas.nashif@intel.com> submit/trunk/20130131.165010@88f28c3
+- Update to 2.35.4
+
 * Thu Jan 03 2013 jbollo <jose.bollo@eurogiciel.fr> accepted/trunk/20121220.211950@7fcf93d
 - Avoiding SIGSEGV when running gio-querymodules
 
