@@ -2,15 +2,14 @@
 %define keepstatic 1
 
 Name:           glib2
-%define _name glib
-Version:        2.35.4
+Version:        2.35.7
 Release:        0
 # FIXME: find out if tapsets should really be in devel package or in main package
 Summary:        General-Purpose Utility Library
 License:        LGPL-2.1+
 Group:          System/Libraries
 Url:            http://www.gtk.org/
-Source:         http://download.gnome.org/sources/glib/2.32/%{_name}-%{version}.tar.xz
+Source:         http://download.gnome.org/sources/glib/2.32/%{name}-%{version}.tar.xz
 Source1:        glib2.sh
 Source2:        glib2.csh
 # Not upstream file. Only proposes upstream packages:
@@ -44,7 +43,7 @@ a main loop abstraction, and so on.
 
 %package tools
 Summary:        General-Purpose Utility Library -- Tools
-Group:          Development/Libraries/C and C++
+Group:          Development/Libraries
 
 %description tools
 GLib is a general-purpose utility library, which provides many useful
@@ -93,7 +92,7 @@ Requires:       python-xml
 Provides:       glib2-doc = 2.19.6
 Obsoletes:      glib2-doc < 2.19.6
 Summary:        General-Purpose Utility Library -- Development Files
-Group:          Development/Libraries/C and C++
+Group:          Development/Libraries
 
 %description devel
 GLib is a general-purpose utility library, which provides many useful
@@ -105,7 +104,7 @@ This package contains the development files for GLib.
 %package devel-static
 Requires:       %{name}-devel = %{version}
 Summary:        General-Purpose Utility Library -- Static Libraries
-Group:          Development/Libraries/C and C++
+Group:          Development/Libraries
 
 %description devel-static
 GLib is a general-purpose utility library, which provides many useful
@@ -179,7 +178,7 @@ a main loop abstraction, and so on.
 The GObject library provides an object-oriented framework for C.
 
 %prep
-%setup -q -n %{_name}-%{version}
+%setup -q -n %{name}-%{version}
 cp -a %{S:1} %{S:2} .
 cp -a %{S:4} gnome_defaults.conf
 if ! test -f %{_datadir}/aclocal/gtk-doc.m4 ; then
@@ -197,14 +196,11 @@ NOCONFIGURE=1 ./autogen.sh
 
 %{__make} %{?_smp_mflags} V=1
 
-%check
-# make check does not work on x86_64. See http://bugzilla.gnome.org/show_bug.cgi?id=554969
-# %{__make} %{?jobs:-j%jobs} check
 
 %install
 %make_install
-%find_lang %{_name}20 %{?no_lang_C}
-mv %{_name}20.lang %{_name}2.lang
+%find_lang glib20 %{?no_lang_C}
+
 mkdir -p %{buildroot}%{_sysconfdir}/profile.d
 install -D -m0644 glib2.sh %{buildroot}%{_sysconfdir}/profile.d/zzz-glib2.sh
 install -D -m0644 glib2.csh %{buildroot}%{_sysconfdir}/profile.d/zzz-glib2.csh
@@ -304,7 +300,7 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %ghost %{_localstatedir}/cache/gio-2.0/lxde-defaults.list
 
 
-%lang_package
+%lang_package -f glib20
 
 %docs_package
 
