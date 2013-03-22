@@ -1,3 +1,6 @@
+* Fri Mar 22 2013 Anas Nashif <anas.nashif@intel.com> 2.35.9@14fe501
+- Update to 2.35.9
+
 * Tue Mar 05 2013 Anas Nashif <anas.nashif@intel.com> 2.35.8@89b88e0
 - Remove previous crash fix (TZPC-453)
 
