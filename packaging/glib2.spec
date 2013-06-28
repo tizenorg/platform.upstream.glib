@@ -19,6 +19,7 @@ Source6:        macros.glib2
 # Please update this file from the latest gtk-doc package:
 Source7:        gtk-doc.m4
 Source99:       baselibs.conf
+Source1001: 	glib2.manifest
 BuildRequires:  automake
 BuildRequires:  fdupes
 BuildRequires:  gcc-c++
@@ -179,6 +180,7 @@ The GObject library provides an object-oriented framework for C.
 
 %prep
 %setup -q -n %{name}-%{version}
+cp %{SOURCE1001} .
 cp -a %{S:1} %{S:2} .
 cp -a %{S:4} gnome_defaults.conf
 if ! test -f %{_datadir}/aclocal/gtk-doc.m4 ; then
@@ -248,6 +250,7 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 
 
 %files tools
+%manifest %{name}.manifest
 %defattr(-,root,root)
 %dir %{_datadir}/bash-completion
 %dir %{_datadir}/bash-completion/completions
@@ -264,27 +267,33 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %{_sysconfdir}/profile.d/zzz-glib2.*
 
 %files -n gio-branding-upstream
+%manifest %{name}.manifest
 %defattr(-,root,root)
 %config (noreplace) %{_sysconfdir}/gnome_defaults.conf
 
 %files -n libglib
+%manifest %{name}.manifest
 %defattr(-, root, root)
 %license COPYING
 %{_libdir}/libglib*.so.*
 
 %files -n libgmodule
+%manifest %{name}.manifest
 %defattr(-, root, root)
 %{_libdir}/libgmodule*.so.*
 
 %files -n libgobject
+%manifest %{name}.manifest
 %defattr(-, root, root)
 %{_libdir}/libgobject*.so.*
 
 %files -n libgthread
+%manifest %{name}.manifest
 %defattr(-, root, root)
 %{_libdir}/libgthread*.so.*
 
 %files -n libgio
+%manifest %{name}.manifest
 %defattr(-, root, root)
 %{_libdir}/libgio*.so.*
 %dir %{_libdir}/gio
@@ -305,6 +314,7 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %docs_package
 
 %files devel
+%manifest %{name}.manifest
 %defattr(-,root,root)
 
 %{_bindir}/gdbus-codegen
@@ -344,6 +354,7 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %dir %{_datadir}/gdb/auto-load%{_libdir}
 
 %files devel-static
+%manifest %{name}.manifest
 %defattr(-,root,root)
 %{_libdir}/lib*.a
 
