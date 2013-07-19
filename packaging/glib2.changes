@@ -1,5 +1,14 @@
 * Tue Aug 13 2013 Anas Nashif <anas.nashif@intel.com> accepted/tizen/20130520.095512@84a55be
 - Remove empty docs package
+* Fri Jul 19 2013 Philippe Coval <philippe.coval@eurogiciel.fr> accepted/tizen/20130710.220535@5c863cc
+- gdesktopappinfo: Allow getting the desktop ID from the filename
+  Bug-Tizen: TZPC-3317 (... remove the fav apps icon ...)
+  Origin: upstream, https://git.gnome.org/browse/glib/commit/?id=c0af442909e1304b799a4b6c145f8444c752e3da
+- resetting manifest requested domain to floor
+- GSocks5Proxy: don't crash if parsing negotiation reply fails
+  Applied-upstream: 2.36.2, commit:0ba982e05
+  Bug: https://bugzilla.gnome.org/show_bug.cgi?id=699493
+  Bug-Tizen: TZPC-34 (Empathy / Telepathy - Proxy support)
 
 * Sat Apr 27 2013 Anas Nashif <anas.nashif@intel.com> 2.36.1@1b0d9ca
 - Update to 2.36.1
