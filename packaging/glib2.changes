@@ -1,5 +1,9 @@
+* Tue Aug 13 2013 Anas Nashif <anas.nashif@intel.com> 2.36.3@0540f90
+- add .gbs.conf and update to 2.36.4
+
 * Tue Aug 13 2013 Anas Nashif <anas.nashif@intel.com> accepted/tizen/20130520.095512@84a55be
 - Remove empty docs package
+
 * Fri Jul 19 2013 Philippe Coval <philippe.coval@eurogiciel.fr> accepted/tizen/20130710.220535@5c863cc
 - gdesktopappinfo: Allow getting the desktop ID from the filename
   Bug-Tizen: TZPC-3317 (... remove the fav apps icon ...)
