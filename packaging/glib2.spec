@@ -2,12 +2,12 @@
 %define keepstatic 1
 
 Name:           glib2
-Version:        2.36.1
+Version:        2.36.4
 Release:        0
 # FIXME: find out if tapsets should really be in devel package or in main package
 Summary:        General-Purpose Utility Library
 License:        LGPL-2.1+
-Group:          System/Libraries
+Group:          Base/Libraries
 Url:            http://www.gtk.org/
 Source:         http://download.gnome.org/sources/glib/2.32/%{name}-%{version}.tar.xz
 Source1:        glib2.sh
@@ -44,7 +44,6 @@ a main loop abstraction, and so on.
 
 %package tools
 Summary:        General-Purpose Utility Library -- Tools
-Group:          Development/Libraries
 
 %description tools
 GLib is a general-purpose utility library, which provides many useful
@@ -53,7 +52,6 @@ a main loop abstraction, and so on.
 
 %package -n gio-branding-upstream
 Summary:        Upstream definitions of default settings and applications
-Group:          System/Libraries
 Requires:       libgio = %{version}
 Provides:       %{name}-branding-upstream = %{version}
 Obsoletes:      %{name}-branding-upstream < %{version}
@@ -93,7 +91,6 @@ Requires:       python-xml
 Provides:       glib2-doc = 2.19.6
 Obsoletes:      glib2-doc < 2.19.6
 Summary:        General-Purpose Utility Library -- Development Files
-Group:          Development/Libraries
 
 %description devel
 GLib is a general-purpose utility library, which provides many useful
@@ -105,7 +102,6 @@ This package contains the development files for GLib.
 %package devel-static
 Requires:       %{name}-devel = %{version}
 Summary:        General-Purpose Utility Library -- Static Libraries
-Group:          Development/Libraries
 
 %description devel-static
 GLib is a general-purpose utility library, which provides many useful
@@ -116,7 +112,6 @@ This package contains static versions of the GLib libraries.
 
 %package -n libglib
 Summary:        General-Purpose Utility Library
-Group:          System/Libraries
 Provides:       %{name} = %{version}
 Obsoletes:      %{name} < %{version}
 
@@ -127,7 +122,6 @@ a main loop abstraction, and so on.
 
 %package -n libgmodule
 Summary:        General-Purpose Utility Library -- Library for Modules
-Group:          System/Libraries
 
 %description -n libgmodule
 GLib is a general-purpose utility library, which provides many useful
@@ -139,7 +133,6 @@ object files (commonly known as 'plug-ins').
 
 %package -n libgio
 Summary:        General-Purpose Utility Library -- Library for VFS
-Group:          System/Libraries
 Requires:       gio-branding = %{version}
 # bnc#555605: shared-mime-info is required by libgio to properly detect mime types.
 Requires:       shared-mime-info
@@ -157,7 +150,6 @@ GIO provides a modern, easy-to-use VFS API.
 
 %package -n libgthread
 Summary:        General-Purpose Utility Library -- Library for Threads
-Group:          System/Libraries
 
 %description -n libgthread
 GLib is a general-purpose utility library, which provides many useful
@@ -169,7 +161,6 @@ software.
 
 %package -n libgobject
 Summary:        General-Purpose Utility Library -- Object-Oriented Framework for C
-Group:          System/Libraries
 
 %description -n libgobject
 GLib is a general-purpose utility library, which provides many useful
