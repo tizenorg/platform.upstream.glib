@@ -302,7 +302,6 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 
 %lang_package -f glib20
 
-%docs_package
 
 %files devel
 %defattr(-,root,root)
