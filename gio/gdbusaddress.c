@@ -401,7 +401,7 @@ g_dbus_is_supported_address (const gchar  *string,
         goto out;
 
       supported = FALSE;
-      if (g_strcmp0 (transport_name, "unix") == 0)
+      if ((g_strcmp0 (transport_name, "unix") == 0) || (g_strcmp0 (transport_name, "kdbus") == 0))
         supported = is_valid_unix (a[n], key_value_pairs, error);
       else if (g_strcmp0 (transport_name, "tcp") == 0)
         supported = is_valid_tcp (a[n], key_value_pairs, error);
@@ -583,6 +583,28 @@ g_dbus_address_connect (const gchar   *address_entry,
           g_assert_not_reached ();
         }
     }
+  else if (g_strcmp0 (transport_name, "kdbus") == 0)
+    {
+      const gchar *path;
+      path = g_hash_table_lookup (key_value_pairs, "path");
+      if (path == NULL)
+        {
+          g_set_error (error,
+                       G_IO_ERROR,
+                       G_IO_ERROR_INVALID_ARGUMENT,
+                       _("Error in address `%s' - the kdbus transport requires "
+                         "key `path' to be set"),
+                       address_entry);
+        }
+      else if (path != NULL)
+        {
+          connectable = G_SOCKET_CONNECTABLE (g_unix_socket_address_new (path));
+        }
+      else
+        {
+          g_assert_not_reached ();
+        }
+    }
 #endif
   else if (g_strcmp0 (transport_name, "tcp") == 0 || g_strcmp0 (transport_name, "nonce-tcp") == 0)
     {
@@ -664,6 +686,7 @@ g_dbus_address_connect (const gchar   *address_entry,
 
   if (connectable != NULL)
     {
+
       GSocketClient *client;
       GSocketConnection *connection;
 
@@ -677,6 +700,22 @@ g_dbus_address_connect (const gchar   *address_entry,
       g_object_unref (client);
       if (connection == NULL)
         goto out;
+
+      //TODO
+      /*
+      if (g_strcmp0 (transport_name, "kdbus") == 0)
+        {
+          GKdbusClient *client;
+          GKdbusConnection *connection;
+          
+          g_assert (ret == NULL);
+          client = g_kdbus_client_new ();
+          connection = g_kdbus_client_connect (client,
+                                               connectable,
+                                               cancellable,
+                                               error);
+        }
+      */
 
       ret = G_IO_STREAM (connection);
 
