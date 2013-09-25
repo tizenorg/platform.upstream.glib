@@ -42,6 +42,7 @@
 #include "glib/gstdio.h"
 #include "gsocketcontrolmessage.h"
 #include "gsocketconnection.h"
+#include "gkdbusconnection.h"
 #include "gsocketoutputstream.h"
 
 #ifdef G_OS_UNIX
@@ -364,8 +365,9 @@ struct GDBusWorker
   GDBusWorkerDisconnectedCallback     disconnected_callback;
   gpointer                            user_data;
 
-  /* if not NULL, stream is GSocketConnection */
+  /* if GSocket and GKdbus are NULL, stream is GSocketConnection */
   GSocket *socket;
+  GKdbus  *kdbus;
 
   /* used for reading */
   GMutex                              read_lock;
@@ -1676,6 +1678,9 @@ _g_dbus_worker_new (GIOStream                              *stream,
 
   if (G_IS_SOCKET_CONNECTION (worker->stream))
     worker->socket = g_socket_connection_get_socket (G_SOCKET_CONNECTION (worker->stream));
+
+  if (G_IS_KDBUS_CONNECTION (worker->stream))
+    worker->kdbus = g_kdbus_connection_get_kdbus (G_KDBUS_CONNECTION (worker->stream));
 
   worker->shared_thread_data = _g_dbus_shared_thread_ref ();
 
