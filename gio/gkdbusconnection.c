@@ -160,6 +160,7 @@ g_kdbus_connection_init (GKdbusConnection *connection)
   connection->priv = G_TYPE_INSTANCE_GET_PRIVATE (connection,
                                                   G_TYPE_KDBUS_CONNECTION,
                                                   GKdbusConnectionPrivate);
+  connection->priv->kdbus = g_object_new(G_TYPE_KDBUS,NULL);
 }
 
 /**

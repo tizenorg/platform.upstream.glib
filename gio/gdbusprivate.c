@@ -876,11 +876,11 @@ _g_dbus_worker_do_read_unlocked (GDBusWorker *worker)
 static gboolean
 _g_dbus_worker_do_initial_read (gpointer data)
 {
-  GDBusWorker *worker = data;
-  g_mutex_lock (&worker->read_lock);
-  _g_dbus_worker_do_read_unlocked (worker);
-  g_mutex_unlock (&worker->read_lock);
-  return FALSE;
+  //GDBusWorker *worker = data;
+  //g_mutex_lock (&worker->read_lock);
+  //_g_dbus_worker_do_read_unlocked (worker);
+  //g_mutex_unlock (&worker->read_lock);
+  //return FALSE;
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
@@ -986,132 +986,136 @@ on_socket_ready (GSocket      *socket,
 static void
 write_message_continue_writing (MessageToWriteData *data)
 {
-  GOutputStream *ostream;
 #ifdef G_OS_UNIX
   GSimpleAsyncResult *simple;
-  GUnixFDList *fd_list;
-#endif
-
-#ifdef G_OS_UNIX
-  /* Note: we can't access data->simple after calling g_async_result_complete () because the
-   * callback can free @data and we're not completing in idle. So use a copy of the pointer.
-   */
   simple = data->simple;
 #endif
 
-  ostream = g_io_stream_get_output_stream (data->worker->stream);
-#ifdef G_OS_UNIX
-  fd_list = g_dbus_message_get_unix_fd_list (data->message);
-#endif
-
-  g_assert (!g_output_stream_has_pending (ostream));
-  g_assert_cmpint (data->total_written, <, data->blob_size);
-
-  if (FALSE)
+  if (G_IS_KDBUS_CONNECTION (data->worker->stream))
     {
+      g_print("THIS IS KDBUS!\n");
     }
-#ifdef G_OS_UNIX
-  else if (G_IS_SOCKET_OUTPUT_STREAM (ostream) && data->total_written == 0)
-    {
-      GOutputVector vector;
-      GSocketControlMessage *control_message;
-      gssize bytes_written;
-      GError *error;
-
-      vector.buffer = data->blob;
-      vector.size = data->blob_size;
-
-      control_message = NULL;
-      if (fd_list != NULL && g_unix_fd_list_get_length (fd_list) > 0)
-        {
-          if (!(data->worker->capabilities & G_DBUS_CAPABILITY_FLAGS_UNIX_FD_PASSING))
-            {
-              g_simple_async_result_set_error (simple,
-                                               G_IO_ERROR,
-                                               G_IO_ERROR_FAILED,
-                                               "Tried sending a file descriptor but remote peer does not support this capability");
-              g_simple_async_result_complete (simple);
-              g_object_unref (simple);
-              goto out;
-            }
-          control_message = g_unix_fd_message_new_with_fd_list (fd_list);
-        }
-
-      error = NULL;
-      bytes_written = g_socket_send_message (data->worker->socket,
-                                             NULL, /* address */
-                                             &vector,
-                                             1,
-                                             control_message != NULL ? &control_message : NULL,
-                                             control_message != NULL ? 1 : 0,
-                                             G_SOCKET_MSG_NONE,
-                                             data->worker->cancellable,
-                                             &error);
-      if (control_message != NULL)
-        g_object_unref (control_message);
-
-      if (bytes_written == -1)
-        {
-          /* Handle WOULD_BLOCK by waiting until there's room in the buffer */
-          if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK))
-            {
-              GSource *source;
-              source = g_socket_create_source (data->worker->socket,
-                                               G_IO_OUT | G_IO_HUP | G_IO_ERR,
-                                               data->worker->cancellable);
-              g_source_set_callback (source,
-                                     (GSourceFunc) on_socket_ready,
-                                     data,
-                                     NULL); /* GDestroyNotify */
-              g_source_attach (source, g_main_context_get_thread_default ());
-              g_source_unref (source);
-              g_error_free (error);
-              goto out;
-            }
-          g_simple_async_result_take_error (simple, error);
-          g_simple_async_result_complete (simple);
-          g_object_unref (simple);
-          goto out;
-        }
-      g_assert (bytes_written > 0); /* zero is never returned */
-
-      write_message_print_transport_debug (bytes_written, data);
-
-      data->total_written += bytes_written;
-      g_assert (data->total_written <= data->blob_size);
-      if (data->total_written == data->blob_size)
-        {
-          g_simple_async_result_complete (simple);
-          g_object_unref (simple);
-          goto out;
-        }
-
-      write_message_continue_writing (data);
-    }
-#endif
   else
     {
+      GOutputStream *ostream;
 #ifdef G_OS_UNIX
-      if (fd_list != NULL)
-        {
-          g_simple_async_result_set_error (simple,
-                                           G_IO_ERROR,
-                                           G_IO_ERROR_FAILED,
-                                           "Tried sending a file descriptor on unsupported stream of type %s",
-                                           g_type_name (G_TYPE_FROM_INSTANCE (ostream)));
-          g_simple_async_result_complete (simple);
-          g_object_unref (simple);
-          goto out;
-        }
+      GUnixFDList *fd_list;
 #endif
 
-      g_output_stream_write_async (ostream,
-                                   (const gchar *) data->blob + data->total_written,
-                                   data->blob_size - data->total_written,
-                                   G_PRIORITY_DEFAULT,
-                                   data->worker->cancellable,
-                                   write_message_async_cb,
-                                   data);
+      ostream = g_io_stream_get_output_stream (data->worker->stream);
+#ifdef G_OS_UNIX
+      fd_list = g_dbus_message_get_unix_fd_list (data->message);
+#endif
+
+      g_assert (!g_output_stream_has_pending (ostream));
+      g_assert_cmpint (data->total_written, <, data->blob_size);
+
+      if (FALSE)
+        {
+        }
+#ifdef G_OS_UNIX
+      else if (G_IS_SOCKET_OUTPUT_STREAM (ostream) && data->total_written == 0)
+        {
+           GOutputVector vector;
+           GSocketControlMessage *control_message;
+           gssize bytes_written;
+           GError *error;
+
+           vector.buffer = data->blob;
+           vector.size = data->blob_size;
+
+           control_message = NULL;
+           if (fd_list != NULL && g_unix_fd_list_get_length (fd_list) > 0)
+             {
+               if (!(data->worker->capabilities & G_DBUS_CAPABILITY_FLAGS_UNIX_FD_PASSING))
+                 {
+                   g_simple_async_result_set_error (simple,
+                                                    G_IO_ERROR,
+                                                    G_IO_ERROR_FAILED,
+                                                    "Tried sending a file descriptor but remote peer does not support this capability");
+                   g_simple_async_result_complete (simple);
+                   g_object_unref (simple);
+                   goto out;
+                 }
+                control_message = g_unix_fd_message_new_with_fd_list (fd_list);
+              }
+
+            error = NULL;
+            bytes_written = g_socket_send_message (data->worker->socket,
+                                                  NULL, /* address */
+                                                  &vector,
+                                                  1,
+                                                  control_message != NULL ? &control_message : NULL,
+                                                  control_message != NULL ? 1 : 0,
+                                                  G_SOCKET_MSG_NONE,
+                                                  data->worker->cancellable,
+                                                  &error);
+           if (control_message != NULL)
+             g_object_unref (control_message);
+
+           if (bytes_written == -1)
+             {
+               /* Handle WOULD_BLOCK by waiting until there's room in the buffer */
+               if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK))
+                 {
+                   GSource *source;
+                   source = g_socket_create_source (data->worker->socket,
+                                                    G_IO_OUT | G_IO_HUP | G_IO_ERR,
+                                                    data->worker->cancellable);
+                   g_source_set_callback (source,
+                                          (GSourceFunc) on_socket_ready,
+                                          data,
+                                          NULL); /* GDestroyNotify */
+                   g_source_attach (source, g_main_context_get_thread_default ());
+                   g_source_unref (source);
+                   g_error_free (error);
+                   goto out;
+                 }
+               g_simple_async_result_take_error (simple, error);
+               g_simple_async_result_complete (simple);
+               g_object_unref (simple);
+               goto out;
+             }
+           g_assert (bytes_written > 0); /* zero is never returned */
+
+           write_message_print_transport_debug (bytes_written, data);
+
+           data->total_written += bytes_written;
+           g_assert (data->total_written <= data->blob_size);
+           if (data->total_written == data->blob_size)
+             {
+               g_simple_async_result_complete (simple);
+               g_object_unref (simple);
+               goto out;
+             }
+
+           write_message_continue_writing (data);
+         }
+#endif
+       else
+         {
+#ifdef G_OS_UNIX
+           if (fd_list != NULL)
+             {
+               g_simple_async_result_set_error (simple,
+                                                G_IO_ERROR,
+                                                G_IO_ERROR_FAILED,
+                                                "Tried sending a file descriptor on unsupported stream of type %s",
+                                                g_type_name (G_TYPE_FROM_INSTANCE (ostream)));
+               g_simple_async_result_complete (simple);
+               g_object_unref (simple);
+               goto out;
+             }
+#endif
+
+            g_output_stream_write_async (ostream,
+                                        (const gchar *) data->blob + data->total_written,
+                                        data->blob_size - data->total_written,
+                                        G_PRIORITY_DEFAULT,
+                                        data->worker->cancellable,
+                                        write_message_async_cb,
+                                        data);
+         }
     }
 #ifdef G_OS_UNIX
  out:
