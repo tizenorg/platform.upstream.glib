@@ -93,7 +93,8 @@ gssize                  g_kdbus_receive                 (GKdbus       *kdbus,
 GLIB_AVAILABLE_IN_ALL
 gssize                  g_kdbus_send_message            (GKdbus          *kdbus,
                                                          GDBusMessage    *dbus_msg,
-                                                         GDBusConnection *connection,
+                                                         gchar           *blob,
+                                                         gsize            blob_size,
 		                                                     GError          **error);
 GLIB_AVAILABLE_IN_ALL
 gboolean                g_kdbus_register                (GKdbus           *kdbus);

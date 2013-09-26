@@ -284,7 +284,7 @@ gboolean g_kdbus_register(GKdbus           *kdbus)
 	}
 
   kdbus->priv->peer_id = hello.id;
-	g_print("-- Our peer ID is: %i\n", hello.id);
+	g_print("-- Our peer ID is: %llu\n", hello.id);
 	// TODO (ASK RADEK)transportS->bloom_size = hello.bloom_size;
 
 	kdbus->priv->buffer_ptr = mmap(NULL, RECEIVE_POOL_SIZE, PROT_READ, MAP_SHARED, kdbus->priv->fd, 0);
@@ -414,7 +414,8 @@ g_kdbus_receive (GKdbus       *kdbus,
 gssize
 g_kdbus_send_message (GKdbus          *kdbus,
                       GDBusMessage    *dbus_msg,
-                      GDBusConnection *connection,
+                      gchar           *blob,
+                      gsize           blob_size,
 		                  GError          **error)
 {
   struct kdbus_msg* kmsg;
@@ -422,11 +423,7 @@ g_kdbus_send_message (GKdbus          *kdbus,
   guint64 kmsg_size = 0;
   const gchar *dst;
   guint64 dst_id = KDBUS_DST_ID_BROADCAST;
-  gsize blob_size;
-  guchar *blob;
-
-  // get dbus message blob
-  blob = g_dbus_message_to_blob(dbus_msg, &blob_size, 0, error);
+  
   g_print ("kdbus_send_message blob_size: %i", (int)blob_size);
   
   // get dst name
@@ -452,10 +449,10 @@ g_kdbus_send_message (GKdbus          *kdbus,
   kmsg->size = kmsg_size;
   kmsg->payload_type = KDBUS_PAYLOAD_DBUS1;
   kmsg->dst_id = dst ? 0 : dst_id;
-  kmsg->src_id = strtoull(g_dbus_connection_get_unique_name(connection), NULL , 10);
+  kmsg->src_id = strtoull(g_dbus_message_get_sender(dbus_msg), NULL , 10);
   kmsg->cookie = g_dbus_message_get_serial(dbus_msg);
 
-  g_print ("kdbus_send_message unique_name: %s", g_dbus_connection_get_unique_name(connection));
+  g_print ("kdbus_send_message unique_name: %s", g_dbus_message_get_sender(dbus_msg));
 
   // build message contents
   item = kmsg->items;
