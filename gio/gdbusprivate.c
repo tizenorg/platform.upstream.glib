@@ -994,8 +994,8 @@ write_message_continue_writing (MessageToWriteData *data)
   if (G_IS_KDBUS_CONNECTION (data->worker->stream))
     {
       GError *error;
-
-      data->total_written = g_kdbus_send_message(data->worker->kdbus, data->message, data->blob, data->blob_size, error);
+      error = NULL;
+      data->total_written = g_kdbus_send_message(data->worker->kdbus, data->message, data->blob, data->blob_size, &error);
       
       if (data->total_written == data->blob_size)
         {
