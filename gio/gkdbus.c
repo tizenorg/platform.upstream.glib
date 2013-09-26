@@ -48,6 +48,25 @@
 #include "gioerror.h"
 #include "glibintl.h"
 #include "kdbus.h"
+#include "gdbusmessage.h"
+#include "gdbusconnection.h"
+
+#define KDBUS_PART_FOREACH(part, head, first)				\
+	for (part = (head)->first;					\
+	     (guint8 *)(part) < (guint8 *)(head) + (head)->size;	\
+	     part = KDBUS_PART_NEXT(part))
+#define RECEIVE_POOL_SIZE (10 * 1024LU * 1024LU)
+
+#define MSG_ITEM_BUILD_VEC(data, datasize)                                    \
+	item->type = KDBUS_MSG_PAYLOAD_VEC;					\
+        item->size = KDBUS_PART_HEADER_SIZE + sizeof(struct kdbus_vec);		\
+        item->vec.address = (unsigned long) data;       			\
+        item->vec.size = datasize;
+
+#define KDBUS_ALIGN8(l) (((l) + 7) & ~7)
+#define KDBUS_PART_NEXT(part) \
+	(typeof(part))(((guint8 *)part) + KDBUS_ALIGN8((part)->size))
+#define KDBUS_ITEM_SIZE(s) KDBUS_ALIGN8((s) + KDBUS_PART_HEADER_SIZE)
 
 /**
  * SECTION:gkdbus
@@ -292,12 +311,83 @@ g_kdbus_receive (GKdbus       *kdbus,
  * @kdbus: a #GKdbus
  */
 gssize
-g_kdbus_send_message (GKdbus       *kdbus,
-                      GDBusMessage *msg,
-		                  GError       **error)
+g_kdbus_send_message (GKdbus          *kdbus,
+                      GDBusMessage    *dbus_msg,
+                      GDBusConnection *connection,
+		                  GError          **error)
 {
-  //TODO
-  return 0;
+  struct kdbus_msg* kmsg;
+  struct kdbus_item *item;
+  guint64 kmsg_size = 0;
+  const gchar *dst;
+  guint64 dst_id = KDBUS_DST_ID_BROADCAST;
+  gsize blob_size;
+  guchar *blob;
+
+  // get dbus message blob
+  blob = g_dbus_message_to_blob(dbus_msg, &blob_size, 0, error);
+  g_print ("kdbus_send_message blob_size: %i", (int)blob_size);
+  
+  // get dst name
+  dst = g_dbus_message_get_destination(dbus_msg);
+  g_print ("kdbus_send_message destination name: %s", dst);
+
+  kmsg_size = sizeof(struct kdbus_msg);
+  kmsg_size += KDBUS_ITEM_SIZE(sizeof(struct kdbus_vec)); // vector for blob
+
+  if (dst)
+  	kmsg_size += KDBUS_ITEM_SIZE(strlen(dst) + 1);
+  else if (dst_id == KDBUS_DST_ID_BROADCAST)
+  	kmsg_size += KDBUS_PART_HEADER_SIZE + 32; /* TODO transport->bloom_size*/;
+
+  kmsg = malloc(kmsg_size);
+  if (!kmsg)
+  {
+  	// TODO debug/error
+	  return -1;
+  }
+
+  memset(kmsg, 0, kmsg_size);
+  kmsg->size = kmsg_size;
+  kmsg->payload_type = KDBUS_PAYLOAD_DBUS1;
+  kmsg->dst_id = dst ? 0 : dst_id;
+  kmsg->src_id = strtoull(g_dbus_connection_get_unique_name(connection), NULL , 10);
+  kmsg->cookie = g_dbus_message_get_serial(dbus_msg);
+
+  g_print ("kdbus_send_message unique_name: %s", g_dbus_connection_get_unique_name(connection));
+
+  // build message contents
+  item = kmsg->items;
+
+  MSG_ITEM_BUILD_VEC(blob, blob_size);
+
+  if (dst)
+	{
+		item = KDBUS_PART_NEXT(item);
+		item->type = KDBUS_MSG_DST_NAME;
+		item->size = KDBUS_PART_HEADER_SIZE + strlen(dst) + 1;
+		strcpy(item->str, dst);
+	}
+	else if (dst_id == KDBUS_DST_ID_BROADCAST)
+	{
+		item = KDBUS_PART_NEXT(item);
+		item->type = KDBUS_MSG_BLOOM;
+		item->size = KDBUS_PART_HEADER_SIZE + 32; /* TODO transport->bloom_size*/;
+		// TODO strncpy(item->data, dbus_message_get_interface(message), transport->bloom_size);
+	}
+
+again:
+	if (ioctl(kdbus->priv->fd, KDBUS_CMD_MSG_SEND, kmsg))
+	{
+		if(errno == EINTR)
+			goto again;
+    else
+      g_warning ("g_kdbus_send_message: ioctl error sending kdbus message: %d (%m)", errno);
+  }
+
+  free(kmsg);
+
+  return blob_size;
 }
 
 /***************************************************************************************************************

@@ -90,9 +90,11 @@ GLIB_AVAILABLE_IN_ALL
 gssize                  g_kdbus_receive                 (GKdbus       *kdbus,
                                                          void         *data,
 		                                                     GError       **error);
-gssize                  g_kdbus_send_message            (GKdbus       *kdbus,
-                                                         GDBusMessage *msg,
-		                                                     GError       **error);
+GLIB_AVAILABLE_IN_ALL
+gssize                  g_kdbus_send_message            (GKdbus          *kdbus,
+                                                         GDBusMessage    *dbus_msg,
+                                                         GDBusConnection *connection,
+		                                                     GError          **error);
 
 G_END_DECLS
 
