@@ -95,6 +95,8 @@ gssize                  g_kdbus_send_message            (GKdbus          *kdbus,
                                                          GDBusMessage    *dbus_msg,
                                                          GDBusConnection *connection,
 		                                                     GError          **error);
+GLIB_AVAILABLE_IN_ALL
+gboolean                g_kdbus_register                (GKdbus           *kdbus);
 
 G_END_DECLS
 

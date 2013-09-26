@@ -31,6 +31,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/mman.h>
 
 #ifdef HAVE_SYS_FILIO_H
 # include <sys/filio.h>
@@ -92,6 +93,7 @@ struct _GKdbusPrivate
   guint           closed : 1;
   guint           inited : 1;
   gchar          *buffer_ptr;
+  gint            peer_id;
 };
 
 // TODO:
@@ -161,6 +163,7 @@ g_kdbus_init (GKdbus *kdbus)
   kdbus->priv->fd = -1;
   kdbus->priv->path = NULL;
   kdbus->priv->buffer_ptr = NULL;
+  kdbus->priv->peer_id = -1;
 }
 
 static gboolean
@@ -253,6 +256,47 @@ g_kdbus_is_closed (GKdbus *kdbus)
   return kdbus->priv->closed;
 }
 
+/**
+ * Registration on Kdbus bus.
+ * Hello message + unique name + mapping memory for incoming messages.
+ *
+ * @returns #TRUE on success
+ */
+gboolean g_kdbus_register(GKdbus           *kdbus)
+{
+	struct kdbus_cmd_hello __attribute__ ((__aligned__(8))) hello;
+
+	hello.conn_flags = KDBUS_HELLO_ACCEPT_FD/* |
+			   KDBUS_HELLO_ATTACH_COMM |
+			   KDBUS_HELLO_ATTACH_EXE |
+			   KDBUS_HELLO_ATTACH_CMDLINE |
+			   KDBUS_HELLO_ATTACH_CAPS |
+			   KDBUS_HELLO_ATTACH_CGROUP |
+			   KDBUS_HELLO_ATTACH_SECLABEL |
+			   KDBUS_HELLO_ATTACH_AUDIT*/;
+	hello.size = sizeof(struct kdbus_cmd_hello);
+	hello.pool_size = RECEIVE_POOL_SIZE;
+
+	if (ioctl(kdbus->priv->fd, KDBUS_CMD_HELLO, &hello))
+	{
+		g_print("Failed to send hello: %m, %d",errno);
+		return FALSE;
+	}
+
+  kdbus->priv->peer_id = hello.id;
+	g_print("-- Our peer ID is: %i\n", hello.id);
+	// TODO (ASK RADEK)transportS->bloom_size = hello.bloom_size;
+
+	kdbus->priv->buffer_ptr = mmap(NULL, RECEIVE_POOL_SIZE, PROT_READ, MAP_SHARED, kdbus->priv->fd, 0);
+	if (kdbus->priv->buffer_ptr == MAP_FAILED)
+	{
+		g_print("Error when mmap: %m, %d",errno);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
 /*
  * g_kdbus_decode_msg:
  * @kdbus_msg: kdbus message received into buffer
@@ -261,7 +305,7 @@ g_kdbus_is_closed (GKdbus *kdbus)
 static int 
 g_kdbus_decode_msg(GKdbus           *kdbus,
                    struct kdbus_msg *msg, 
-                   void             *data)
+                   char             *data)
 {
   const struct kdbus_item *item;
   int ret_size = 0;
@@ -270,7 +314,7 @@ g_kdbus_decode_msg(GKdbus           *kdbus,
 	{
 		if (item->size <= KDBUS_PART_HEADER_SIZE)
 		{
-			_dbus_verbose("  +%s (%llu bytes) invalid data record\n", enum_MSG(item->type), item->size);
+			g_print("  +(%llu bytes) invalid data record\n", item->size);
 			break;  //??? continue (because dbus will find error) or break
 		}
 
@@ -281,15 +325,13 @@ g_kdbus_decode_msg(GKdbus           *kdbus,
 				data += item->vec.size;
 				ret_size += item->vec.size;			
 
-				g_print("  +%s (%llu bytes) off=%llu size=%llu\n",
-					enum_MSG(item->type), item->size,
+				g_print("  + KDBUS_MSG_PAYLOAD (%llu bytes) off=%llu size=%llu\n", item->size,
 					(unsigned long long)item->vec.offset,
 					(unsigned long long)item->vec.size);
 			break;
 
       case KDBUS_MSG_REPLY_TIMEOUT:
-				g_print("  +%s (%llu bytes) cookie=%llu\n",
-					   enum_MSG(item->type), item->size, msg->cookie_reply);
+				g_print("  + KDBUS_MSG_REPLY_TIMEOUT (%llu bytes) cookie=%llu\n", item->size, msg->cookie_reply);
 
 				/* TODO
         message = generate_local_error_message(msg->cookie_reply, DBUS_ERROR_NO_REPLY, NULL);
@@ -304,8 +346,7 @@ g_kdbus_decode_msg(GKdbus           *kdbus,
 			break;
 
 			case KDBUS_MSG_REPLY_DEAD:
-				g_print("  +%s (%llu bytes) cookie=%llu\n",
-					   enum_MSG(item->type), item->size, msg->cookie_reply);
+				g_print("  + (%llu bytes) cookie=%llu\n", item->size, msg->cookie_reply);
 
         /* TODO
 				message = generate_local_error_message(msg->cookie_reply, DBUS_ERROR_NAME_HAS_NO_OWNER, NULL);
@@ -350,9 +391,9 @@ g_kdbus_receive (GKdbus       *kdbus,
 	  return -1;
   }
 
-  msg = (struct kdbus_msg *)((gchar*)kdbus->priv->buffer_ptr + offset);
+  msg = (struct kdbus_msg *)((char*)kdbus->priv->buffer_ptr + offset);
 
-  ret_size = g_kdbus_decode_msg(kdbus, msg, data);
+  ret_size = g_kdbus_decode_msg(kdbus, msg, (char*)data);
 
   // Release memory occupied by msg
   again2:
