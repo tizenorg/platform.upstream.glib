@@ -214,9 +214,9 @@ g_kdbus_open (GKdbus         *kdbus,
 	      GError         **error)
 {
   g_return_val_if_fail (G_IS_KDBUS (kdbus), FALSE);
-
+  g_print ("ADDRESS: %s\n",address);
   kdbus->priv->fd = open(address, O_RDWR|O_CLOEXEC|O_NONBLOCK);
-
+  g_print ("FD: %d\n",kdbus->priv->fd);
   return TRUE;
 }
 
@@ -279,7 +279,7 @@ gboolean g_kdbus_register(GKdbus           *kdbus)
 
 	if (ioctl(kdbus->priv->fd, KDBUS_CMD_HELLO, &hello))
 	{
-		g_print("Failed to send hello: %m, %d",errno);
+		g_print("FD: %d Failed to send hello: %m, %d",kdbus->priv->fd,errno);
 		return FALSE;
 	}
 

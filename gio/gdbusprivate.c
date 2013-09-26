@@ -995,8 +995,14 @@ write_message_continue_writing (MessageToWriteData *data)
     {
       GError *error;
 
-      g_print("TEST KDBUS!\n");
-      g_kdbus_send_message(data->worker->kdbus, data->message, data->blob, data->blob_size, error);
+      data->total_written = g_kdbus_send_message(data->worker->kdbus, data->message, data->blob, data->blob_size, error);
+      
+      if (data->total_written == data->blob_size)
+        {
+          g_simple_async_result_complete (simple);
+          g_object_unref (simple);
+          goto out;
+        }
     }
   else
     {
