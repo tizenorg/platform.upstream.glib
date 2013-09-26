@@ -993,7 +993,10 @@ write_message_continue_writing (MessageToWriteData *data)
 
   if (G_IS_KDBUS_CONNECTION (data->worker->stream))
     {
-      g_print("THIS IS KDBUS!\n");
+      GError *error;
+
+      g_print("TEST KDBUS!\n");
+      g_kdbus_send_message(data->worker->kdbus, data->message, data->blob, data->blob_size, error);
     }
   else
     {
