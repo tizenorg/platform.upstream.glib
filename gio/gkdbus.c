@@ -259,11 +259,71 @@ g_kdbus_is_closed (GKdbus *kdbus)
  *
  */
 static int 
-g_kdbus_decode_msg(struct kdbus_msg *msg, 
-                   void      *data)
+g_kdbus_decode_msg(GKdbus           *kdbus,
+                   struct kdbus_msg *msg, 
+                   void             *data)
 {
-  // TODO
-  return 0;
+  const struct kdbus_item *item;
+  int ret_size = 0;
+
+  KDBUS_PART_FOREACH(item, msg, items)
+	{
+		if (item->size <= KDBUS_PART_HEADER_SIZE)
+		{
+			_dbus_verbose("  +%s (%llu bytes) invalid data record\n", enum_MSG(item->type), item->size);
+			break;  //??? continue (because dbus will find error) or break
+		}
+
+		switch (item->type)
+		{
+			case KDBUS_MSG_PAYLOAD_OFF:
+				memcpy(data, (char *)kdbus->priv->buffer_ptr + item->vec.offset, item->vec.size);
+				data += item->vec.size;
+				ret_size += item->vec.size;			
+
+				g_print("  +%s (%llu bytes) off=%llu size=%llu\n",
+					enum_MSG(item->type), item->size,
+					(unsigned long long)item->vec.offset,
+					(unsigned long long)item->vec.size);
+			break;
+
+      case KDBUS_MSG_REPLY_TIMEOUT:
+				g_print("  +%s (%llu bytes) cookie=%llu\n",
+					   enum_MSG(item->type), item->size, msg->cookie_reply);
+
+				/* TODO
+        message = generate_local_error_message(msg->cookie_reply, DBUS_ERROR_NO_REPLY, NULL);
+				if(message == NULL)
+				{
+					ret_size = -1;
+					goto out;
+				}
+
+				ret_size = put_message_into_data(message, data);
+        */
+			break;
+
+			case KDBUS_MSG_REPLY_DEAD:
+				g_print("  +%s (%llu bytes) cookie=%llu\n",
+					   enum_MSG(item->type), item->size, msg->cookie_reply);
+
+        /* TODO
+				message = generate_local_error_message(msg->cookie_reply, DBUS_ERROR_NAME_HAS_NO_OWNER, NULL);
+				if(message == NULL)
+				{
+					ret_size = -1;
+					goto out;
+				}
+        
+				ret_size = put_message_into_data(message, data);
+        */
+			break;
+
+      /* case ... */
+    }
+  }
+
+  return ret_size;
 }
 
 /*
@@ -292,7 +352,7 @@ g_kdbus_receive (GKdbus       *kdbus,
 
   msg = (struct kdbus_msg *)((gchar*)kdbus->priv->buffer_ptr + offset);
 
-  ret_size = g_kdbus_decode_msg(msg, data);
+  ret_size = g_kdbus_decode_msg(kdbus, msg, data);
 
   // Release memory occupied by msg
   again2:
@@ -373,7 +433,7 @@ g_kdbus_send_message (GKdbus          *kdbus,
 		item = KDBUS_PART_NEXT(item);
 		item->type = KDBUS_MSG_BLOOM;
 		item->size = KDBUS_PART_HEADER_SIZE + 32; /* TODO transport->bloom_size*/;
-		// TODO strncpy(item->data, dbus_message_get_interface(message), transport->bloom_size);
+		// TODO (ASK RADEK) strncpy(item->data, dbus_message_get_interface(message), transport->bloom_size);
 	}
 
 again:
