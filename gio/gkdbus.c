@@ -424,11 +424,20 @@ g_kdbus_send_message (GKdbus          *kdbus,
   const gchar *dst;
   guint64 dst_id = KDBUS_DST_ID_BROADCAST;
   
-  g_print ("kdbus_send_message blob_size: %i", (int)blob_size);
+  // if message to org.Freedesktop.DBus then handle differently
+  if(g_strcmp0(g_dbus_message_get_member(dbus_msg), "Hello") == 0)
+  {
+    g_print ("sending Hello message! \n");
+  
+    g_kdbus_register(kdbus); // TODO check return bool
+    goto out;
+  }
+
+  g_print ("kdbus_send_message blob_size: %i \n", (int)blob_size);
   
   // get dst name
   dst = g_dbus_message_get_destination(dbus_msg);
-  g_print ("kdbus_send_message destination name: %s", dst);
+  g_print ("kdbus_send_message destination name: %s \n", dst);
 
   kmsg_size = sizeof(struct kdbus_msg);
   kmsg_size += KDBUS_ITEM_SIZE(sizeof(struct kdbus_vec)); // vector for blob
@@ -452,7 +461,7 @@ g_kdbus_send_message (GKdbus          *kdbus,
   kmsg->src_id = strtoull(g_dbus_message_get_sender(dbus_msg), NULL , 10);
   kmsg->cookie = g_dbus_message_get_serial(dbus_msg);
 
-  g_print ("kdbus_send_message unique_name: %s", g_dbus_message_get_sender(dbus_msg));
+  g_print ("kdbus_send_message unique_name/message->sender: %s \n", g_dbus_message_get_sender(dbus_msg));
 
   // build message contents
   item = kmsg->items;
@@ -480,11 +489,12 @@ again:
 		if(errno == EINTR)
 			goto again;
     else
-      g_warning ("g_kdbus_send_message: ioctl error sending kdbus message: %d (%m)", errno);
+      g_warning ("g_kdbus_send_message: ioctl error sending kdbus message: %d (%m) \n", errno);
   }
 
   free(kmsg);
 
+out:
   return blob_size;
 }
 
