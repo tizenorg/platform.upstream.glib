@@ -77,15 +77,22 @@ GType                   g_kdbus_get_type                (void) G_GNUC_CONST;
 GLIB_AVAILABLE_IN_ALL
 gint                    g_kdbus_get_fd                  (GKdbus           *kdbus);
 GLIB_AVAILABLE_IN_ALL
-gboolean		g_kdbus_open 			(GKdbus           *kdbus,
-	      						 const gchar      *address,
-              						 GCancellable     *cancellable,
-	      						 GError           **error);
+gboolean		            g_kdbus_open 			              (GKdbus           *kdbus,
+	      						                                     const gchar      *address,
+              						                               GCancellable     *cancellable,
+	      						                                     GError           **error);
 GLIB_AVAILABLE_IN_ALL
-gboolean		g_kdbus_close 			(GKdbus           *kdbus,
-							 GError           **error);
+gboolean		            g_kdbus_close 			            (GKdbus           *kdbus,
+							                                           GError           **error);
 GLIB_AVAILABLE_IN_ALL
-gboolean		g_kdbus_is_closed 		(GKdbus *kdbus);
+gboolean		            g_kdbus_is_closed 		          (GKdbus           *kdbus);
+GLIB_AVAILABLE_IN_ALL
+gssize                  g_kdbus_receive                 (GKdbus       *kdbus,
+                                                         void         *data,
+		                                                     GError       **error);
+gssize                  g_kdbus_send_message            (GKdbus       *kdbus,
+                                                         GDBusMessage *msg,
+		                                                     GError       **error);
 
 G_END_DECLS
 

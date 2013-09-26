@@ -30,6 +30,7 @@
 #include <signal.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #ifdef HAVE_SYS_FILIO_H
 # include <sys/filio.h>
@@ -46,6 +47,7 @@
 #include "gioenums.h"
 #include "gioerror.h"
 #include "glibintl.h"
+#include "kdbus.h"
 
 /**
  * SECTION:gkdbus
@@ -70,6 +72,7 @@ struct _GKdbusPrivate
   gint            fd;
   guint           closed : 1;
   guint           inited : 1;
+  gchar          *buffer_ptr;
 };
 
 // TODO:
@@ -138,6 +141,7 @@ g_kdbus_init (GKdbus *kdbus)
   kdbus->priv = G_TYPE_INSTANCE_GET_PRIVATE (kdbus, G_TYPE_KDBUS, GKdbusPrivate);
   kdbus->priv->fd = -1;
   kdbus->priv->path = NULL;
+  kdbus->priv->buffer_ptr = NULL;
 }
 
 static gboolean
@@ -205,6 +209,12 @@ g_kdbus_close (GKdbus  *kdbus,
 		GError  **error)
 {
   // TODO
+
+  close(kdbus->priv->fd);
+
+  kdbus->priv->closed = TRUE;
+  kdbus->priv->fd = -1;
+  
   return TRUE;
 }
 
@@ -224,22 +234,74 @@ g_kdbus_is_closed (GKdbus *kdbus)
   return kdbus->priv->closed;
 }
 
-
-
-
-/***************************************************************************************************************
- * g_kdbus_receive:
- * @kdbus: a #GKdbus
+/*
+ * g_kdbus_decode_msg:
+ * @kdbus_msg: kdbus message received into buffer
+ *
  */
-/*gssize
-g_kdbus_receive (GKdbus       *kdbus,
-		  gchar         *buffer,
-		  gsize          size,
-		  GCancellable  *cancellable,
-		  GError       **error)
+static int 
+g_kdbus_decode_msg(struct kdbus_msg *msg, 
+                   void      *data)
 {
   // TODO
-}*/
+  return 0;
+}
+
+/*
+ * g_kdbus_receive:
+ * @kdbus: a #GKdbus
+ *
+ * TODO handle errors
+ */
+gssize
+g_kdbus_receive (GKdbus       *kdbus,
+                 void         *data,
+		             GError       **error)
+{
+  int ret_size;
+  guint64 __attribute__ ((__aligned__(8))) offset;
+  struct kdbus_msg *msg;
+
+  // get memory offset of msg
+  again:
+  if (ioctl(kdbus->priv->fd, KDBUS_CMD_MSG_RECV, &offset) < 0)
+  {
+	  if(errno == EINTR)
+		  goto again;
+	  return -1;
+  }
+
+  msg = (struct kdbus_msg *)((gchar*)kdbus->priv->buffer_ptr + offset);
+
+  ret_size = g_kdbus_decode_msg(msg, data);
+
+  // Release memory occupied by msg
+  again2:
+	if (ioctl(kdbus->priv->fd, KDBUS_CMD_MSG_RELEASE, &offset) < 0)
+	{
+		if(errno == EINTR)
+			goto again2;
+		return -1;
+	}
+  
+  return ret_size;
+}
+
+/**
+ * g_kdbus_send_message:
+ * @kdbus: a #GKdbus
+ */
+gssize
+g_kdbus_send_message (GKdbus       *kdbus,
+                      GDBusMessage *msg,
+		                  GError       **error)
+{
+  //TODO
+  return 0;
+}
+
+/***************************************************************************************************************
+
 
 /**
  * g_kdbus_send:
@@ -255,23 +317,7 @@ g_kdbus_send (GKdbus       *kdbus,
   // TODO
 }*/
 
-/**
- * g_kdbus_send_message:
- * @kdbus: a #GKdbus
- */
-/*gssize
-g_kdbus_send_message (Gkdbus                *kdbus,
-		       GkdbusAddress         *address,
-		       GOutputVector          *vectors,
-		       gint                    num_vectors,
-		       GkdbusControlMessage **messages,
-		       gint                    num_messages,
-		       gint                    flags,
-		       GCancellable           *cancellable,
-		       GError                **error)
-{
-  //TODO
-}*/
+
 
 
 /**
