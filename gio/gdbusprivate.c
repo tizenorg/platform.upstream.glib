@@ -508,7 +508,7 @@ _g_dbus_worker_emit_message_about_to_be_sent (GDBusWorker  *worker,
 }
 
 /* can only be called from private thread with read-lock held - takes ownership of @message */
-static void
+void
 _g_dbus_worker_queue_or_deliver_received_message (GDBusWorker  *worker,
                                                   GDBusMessage *message)
 {
@@ -995,7 +995,7 @@ write_message_continue_writing (MessageToWriteData *data)
     {
       GError *error;
       error = NULL;
-      data->total_written = g_kdbus_send_message(data->worker->kdbus, data->message, data->blob, data->blob_size, &error);
+      data->total_written = g_kdbus_send_message(data->worker, data->worker->kdbus, data->message, data->blob, data->blob_size, &error);
       
       if (data->total_written == data->blob_size)
         {

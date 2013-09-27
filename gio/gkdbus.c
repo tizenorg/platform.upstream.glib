@@ -409,7 +409,9 @@ g_kdbus_receive (GKdbus       *kdbus,
 }
 
 static gboolean
-g_kdbus_send_reply(GKdbus *kdbus, GDBusMessage    *dbus_msg)
+g_kdbus_send_reply(GDBusWorker     *worker, 
+                   GKdbus           *kdbus, 
+                   GDBusMessage    *dbus_msg)
 {
   GDBusMessage    *reply = NULL;
   char            *unique_name = NULL;
@@ -422,7 +424,7 @@ g_kdbus_send_reply(GKdbus *kdbus, GDBusMessage    *dbus_msg)
 
   g_dbus_message_set_body(reply, g_variant_new ("(s)", unique_name));
   
-  //_g_dbus_worker_queue_or_deliver_received_message (worker, message);
+  _g_dbus_worker_queue_or_deliver_received_message (worker, reply);
 }
 
 
@@ -432,7 +434,8 @@ g_kdbus_send_reply(GKdbus *kdbus, GDBusMessage    *dbus_msg)
  * @kdbus: a #GKdbus
  */
 gssize
-g_kdbus_send_message (GKdbus          *kdbus,
+g_kdbus_send_message (GDBusWorker     *worker,
+                      GKdbus          *kdbus,
                       GDBusMessage    *dbus_msg,
                       gchar           *blob,
                       gsize           blob_size,
@@ -458,7 +461,7 @@ g_kdbus_send_message (GKdbus          *kdbus,
       return -1;
     }
 
-    g_kdbus_send_reply(kdbus, dbus_msg);
+    g_kdbus_send_reply(worker, kdbus, dbus_msg);
     
     
     

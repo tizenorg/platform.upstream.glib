@@ -29,6 +29,7 @@
 #endif
 
 #include <gio/giotypes.h>
+#include "gdbusprivate.h"
 
 G_BEGIN_DECLS
 
@@ -91,7 +92,8 @@ gssize                  g_kdbus_receive                 (GKdbus       *kdbus,
                                                          void         *data,
 		                                                     GError       **error);
 GLIB_AVAILABLE_IN_ALL
-gssize                  g_kdbus_send_message            (GKdbus          *kdbus,
+gssize                  g_kdbus_send_message            (GDBusWorker     *worker,
+                                                         GKdbus          *kdbus,
                                                          GDBusMessage    *dbus_msg,
                                                          gchar           *blob,
                                                          gsize            blob_size,
