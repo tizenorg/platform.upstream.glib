@@ -81,8 +81,9 @@ void         _g_dbus_worker_close        (GDBusWorker         *worker,
                                           GCancellable        *cancellable,
                                           GSimpleAsyncResult  *result);
 /* Samsung change */
-void _g_dbus_worker_queue_or_deliver_received_message (GDBusWorker  *worker,
+void          _g_dbus_worker_queue_or_deliver_received_message (GDBusWorker  *worker,
                                                        GDBusMessage *message);
+GKdbus*        g_dbus_worker_get_kdbus    (GDBusWorker  *worker);
 /* ---------------------------------------------------------------------------------------------------- */
 
 void _g_dbus_initialize (void);

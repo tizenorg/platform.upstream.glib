@@ -1652,6 +1652,10 @@ _g_dbus_worker_send_message (GDBusWorker    *worker,
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
+GKdbus*        g_dbus_worker_get_kdbus    (GDBusWorker  *worker)
+{
+  return worker->kdbus;
+}
 
 GDBusWorker *
 _g_dbus_worker_new (GIOStream                              *stream,

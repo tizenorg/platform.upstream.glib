@@ -1648,6 +1648,12 @@ g_dbus_connection_send_message_unlocked (GDBusConnection   *connection,
                        error))
     goto out;
 
+  if(g_kdbus_get_sender(g_dbus_worker_get_kdbus(connection->worker)) != NULL) 
+    {
+      g_dbus_message_set_sender(message, g_kdbus_get_sender(g_dbus_worker_get_kdbus(connection->worker)));
+      g_print ("g_dbus_connection_send_message_unlocked: set_sender ok: ! \n");
+    }
+
   blob = g_dbus_message_to_blob (message,
                                  &blob_size,
                                  connection->capabilities,

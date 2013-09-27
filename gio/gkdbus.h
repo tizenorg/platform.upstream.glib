@@ -100,6 +100,8 @@ gssize                  g_kdbus_send_message            (GDBusWorker     *worker
 		                                                     GError          **error);
 GLIB_AVAILABLE_IN_ALL
 gboolean                g_kdbus_register                (GKdbus           *kdbus);
+GLIB_AVAILABLE_IN_ALL
+gchar*                  g_kdbus_get_sender                (GKdbus           *kdbus);
 
 G_END_DECLS
 

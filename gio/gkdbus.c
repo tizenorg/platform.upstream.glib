@@ -95,6 +95,7 @@ struct _GKdbusPrivate
   guint           inited : 1;
   gchar          *buffer_ptr;
   gint            peer_id;
+  gchar          *sender;
 };
 
 // TODO:
@@ -165,6 +166,7 @@ g_kdbus_init (GKdbus *kdbus)
   kdbus->priv->path = NULL;
   kdbus->priv->buffer_ptr = NULL;
   kdbus->priv->peer_id = -1;
+  kdbus->priv->sender = NULL;
 }
 
 static gboolean
@@ -408,6 +410,14 @@ g_kdbus_receive (GKdbus       *kdbus,
   return ret_size;
 }
 
+gchar* g_kdbus_get_sender(GKdbus           *kdbus)
+{
+  return kdbus->priv->sender;
+}
+
+/*
+ * TODO add checks for mallocs
+ */
 static gboolean
 g_kdbus_send_reply(GDBusWorker     *worker, 
                    GKdbus           *kdbus, 
@@ -415,6 +425,7 @@ g_kdbus_send_reply(GDBusWorker     *worker,
 {
   GDBusMessage    *reply = NULL;
   char            *unique_name = NULL;
+  char            *sender = NULL;
 
   reply = g_dbus_message_new_method_reply(dbus_msg);
   g_dbus_message_set_sender(reply, "org.freedesktop.DBus");
@@ -422,8 +433,14 @@ g_kdbus_send_reply(GDBusWorker     *worker,
   unique_name = malloc(30); // TODO should allow for Kdbus peer ID max value ?
   sprintf(unique_name, "%i", kdbus->priv->peer_id);
 
+  sender = malloc (strlen(unique_name) + 4);
+  //if(!sender)
+			
+	sprintf(sender, ":1.%s", unique_name);
+  kdbus->priv->sender = sender;
+  g_print ("g_kdbus_send_reply: sender set to:%s! \n", kdbus->priv->sender);
+
   g_dbus_message_set_body(reply, g_variant_new ("(s)", unique_name));
-  
   _g_dbus_worker_queue_or_deliver_received_message (worker, reply);
 }
 
@@ -463,7 +480,7 @@ g_kdbus_send_message (GDBusWorker     *worker,
 
     g_kdbus_send_reply(worker, kdbus, dbus_msg);
     
-    
+    g_print ("kdbus_send_message: hello sent! \n");
     
     goto out;
   }
@@ -493,10 +510,10 @@ g_kdbus_send_message (GDBusWorker     *worker,
   kmsg->size = kmsg_size;
   kmsg->payload_type = KDBUS_PAYLOAD_DBUS1;
   kmsg->dst_id = dst ? 0 : dst_id;
-  kmsg->src_id = strtoull(g_dbus_message_get_sender(dbus_msg), NULL , 10);
+  kmsg->src_id = kdbus->priv->peer_id;
   kmsg->cookie = g_dbus_message_get_serial(dbus_msg);
-
-  g_print ("kdbus_send_message unique_name/message->sender: %s \n", g_dbus_message_get_sender(dbus_msg));
+  g_print ("kdbus_send_message: serial: %i \n", kmsg->cookie);
+  g_print ("kdbus_send_message: src_id/peer_id: %i \n", kdbus->priv->peer_id);
 
   // build message contents
   item = kmsg->items;
@@ -526,7 +543,7 @@ again:
     else
       g_warning ("g_kdbus_send_message: ioctl error sending kdbus message: %d (%m) \n", errno);
   }
-
+  g_print ("kdbus_send_message: ioctl(CMD_MSG_SEND) sent successfully \n");
   free(kmsg);
 
 out:
