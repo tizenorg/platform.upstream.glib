@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <stdio.h>
 
 #ifdef HAVE_SYS_FILIO_H
 # include <sys/filio.h>
@@ -407,6 +408,25 @@ g_kdbus_receive (GKdbus       *kdbus,
   return ret_size;
 }
 
+static gboolean
+g_kdbus_send_reply(GKdbus *kdbus, GDBusMessage    *dbus_msg)
+{
+  GDBusMessage    *reply = NULL;
+  char            *unique_name = NULL;
+
+  reply = g_dbus_message_new_method_reply(dbus_msg);
+  g_dbus_message_set_sender(reply, "org.freedesktop.DBus");
+
+  unique_name = malloc(30); // TODO should allow for Kdbus peer ID max value ?
+  sprintf(unique_name, "%i", kdbus->priv->peer_id);
+
+  g_dbus_message_set_body(reply, g_variant_new ("(s)", unique_name));
+  
+  //_g_dbus_worker_queue_or_deliver_received_message (worker, message);
+}
+
+
+
 /**
  * g_kdbus_send_message:
  * @kdbus: a #GKdbus
@@ -424,20 +444,32 @@ g_kdbus_send_message (GKdbus          *kdbus,
   const gchar *dst;
   guint64 dst_id = KDBUS_DST_ID_BROADCAST;
   
+  
   // if message to org.Freedesktop.DBus then handle differently
   if(g_strcmp0(g_dbus_message_get_member(dbus_msg), "Hello") == 0)
   {
-    g_print ("sending Hello message! \n");
+    
+
+    g_print ("kdbus_send_message: sending Hello message! \n");
   
-    g_kdbus_register(kdbus); // TODO check return bool
+    if(!g_kdbus_register(kdbus))
+    {
+      g_print ("kdbus_send_message: registering failed! \n");
+      return -1;
+    }
+
+    g_kdbus_send_reply(kdbus, dbus_msg);
+    
+    
+    
     goto out;
   }
 
-  g_print ("kdbus_send_message blob_size: %i \n", (int)blob_size);
+  g_print ("kdbus_send_message: blob_size: %i \n", (int)blob_size);
   
   // get dst name
   dst = g_dbus_message_get_destination(dbus_msg);
-  g_print ("kdbus_send_message destination name: %s \n", dst);
+  g_print ("kdbus_send_message: destination name: %s \n", dst);
 
   kmsg_size = sizeof(struct kdbus_msg);
   kmsg_size += KDBUS_ITEM_SIZE(sizeof(struct kdbus_vec)); // vector for blob
