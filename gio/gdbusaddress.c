@@ -35,6 +35,7 @@
 #include "gnetworkaddress.h"
 #include "gsocketclient.h"
 #include "gkdbusconnection.h"
+#include "giostream.h"
 #include "gasyncresult.h"
 #include "gsimpleasyncresult.h"
 #include "glib-private.h"

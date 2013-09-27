@@ -217,9 +217,7 @@ g_kdbus_open (GKdbus         *kdbus,
 	      GError         **error)
 {
   g_return_val_if_fail (G_IS_KDBUS (kdbus), FALSE);
-  g_print ("ADDRESS: %s\n",address);
   kdbus->priv->fd = open(address, O_RDWR|O_CLOEXEC|O_NONBLOCK);
-  g_print ("FD: %d\n",kdbus->priv->fd);
   return TRUE;
 }
 
