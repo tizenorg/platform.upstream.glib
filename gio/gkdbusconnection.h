@@ -71,6 +71,8 @@ struct _GKdbusConnection
 GLIB_AVAILABLE_IN_ALL
 GType              g_kdbus_connection_get_type                  (void) G_GNUC_CONST;
 GLIB_AVAILABLE_IN_ALL
+GKdbusConnection   *g_kdbus_connection_new                      (void);
+GLIB_AVAILABLE_IN_ALL
 gboolean           g_kdbus_connection_is_connected              (GKdbusConnection  *connection);
 GLIB_AVAILABLE_IN_ALL
 gboolean           g_kdbus_connection_connect                   (GKdbusConnection  *connection,

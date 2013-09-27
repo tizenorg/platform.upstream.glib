@@ -48,6 +48,13 @@ struct _GKdbusConnectionPrivate
 };
 
 // TODO
+GKdbusConnection *
+g_kdbus_connection_new (void)
+{
+  return g_object_new(G_TYPE_KDBUS_CONNECTION,NULL);
+}
+
+// TODO
 gboolean
 g_kdbus_connection_connect (GKdbusConnection   *connection,
 			    const gchar        *address,
@@ -156,7 +163,6 @@ g_kdbus_connection_class_init (GKdbusConnectionClass *klass)
 static void
 g_kdbus_connection_init (GKdbusConnection *connection)
 {
-  //connection->kdbus = g_object_new(G_TYPE_KDBUS,NULL);
   connection->priv = G_TYPE_INSTANCE_GET_PRIVATE (connection,
                                                   G_TYPE_KDBUS_CONNECTION,
                                                   GKdbusConnectionPrivate);

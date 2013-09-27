@@ -34,8 +34,7 @@
 #include "gioenumtypes.h"
 #include "gnetworkaddress.h"
 #include "gsocketclient.h"
-#include "gkdbusclient.h"
-#include "giostream.h"
+#include "gkdbusconnection.h"
 #include "gasyncresult.h"
 #include "gsimpleasyncresult.h"
 #include "glib-private.h"
@@ -690,20 +689,18 @@ g_dbus_address_connect (const gchar   *address_entry,
 
       if (g_strcmp0 (transport_name, "kdbus") == 0)
         {
-          GKdbusClient *client;
           GKdbusConnection *connection;
 
           const gchar *path;
           path = g_hash_table_lookup (key_value_pairs, "path");
           
           g_assert (ret == NULL);
-          client = g_kdbus_client_new ();
-          connection = g_kdbus_client_connect (client,
-                                               path,
-                                               cancellable,
-                                               error);
+          connection = g_kdbus_connection_new ();
+          g_kdbus_connection_connect (connection,
+                                      path,
+                                      cancellable,
+                                      error);
           g_object_unref (connectable);
-          g_object_unref (client);
           if (connection == NULL)
             goto out;
 
