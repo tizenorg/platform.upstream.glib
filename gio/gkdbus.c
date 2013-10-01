@@ -52,6 +52,7 @@
 #include "kdbus.h"
 #include "gdbusmessage.h"
 #include "gdbusconnection.h"
+//#include "gclosure.h"
 
 #define KDBUS_PART_FOREACH(part, head, first)				\
 	for (part = (head)->first;					\
@@ -96,6 +97,8 @@ struct _GKdbusPrivate
   gchar          *buffer_ptr;
   gint            peer_id;
   gchar          *sender;
+  guint           timeout;
+  guint           timed_out : 1;
 };
 
 // TODO:
@@ -298,6 +301,29 @@ gboolean g_kdbus_register(GKdbus           *kdbus)
 	return TRUE;
 }
 
+GIOCondition
+g_kdbus_condition_check(GKdbus *kdbus,
+			                  GIOCondition  condition)
+{
+  GPollFD poll_fd;
+  gint result;  
+  g_return_val_if_fail (G_IS_KDBUS (kdbus), 0);
+
+  //if (!check_socket (socket, NULL)) TODO !check for valid kdbus!
+  //  return 0;  
+  poll_fd.fd = kdbus->priv->fd;
+  poll_fd.events = condition;
+  poll_fd.revents = 0;
+
+  do
+    result = g_poll (&poll_fd, 1, 0);
+  while (result == -1 && errno == EINTR);
+
+  return poll_fd.revents;
+  
+}
+
+
 /*
  * g_kdbus_decode_msg:
  * @kdbus_msg: kdbus message received into buffer
@@ -368,6 +394,191 @@ g_kdbus_decode_msg(GKdbus           *kdbus,
   return ret_size;
 }
 
+typedef struct {
+  GSource       source;
+  GPollFD       pollfd;
+  GKdbus       *kdbus;
+  GIOCondition  condition;
+  GCancellable *cancellable;
+  GPollFD       cancel_pollfd;
+  gint64        timeout_time;
+} GKdbusSource;
+
+static gboolean
+kdbus_source_prepare (GSource *source,
+		       gint    *timeout)
+{
+  GKdbusSource *kdbus_source = (GKdbusSource *)source;
+
+  if (g_cancellable_is_cancelled (kdbus_source->cancellable))
+    return TRUE;
+
+  if (kdbus_source->timeout_time)
+    {
+      gint64 now;
+
+      now = g_source_get_time (source);
+      /* Round up to ensure that we don't try again too early */
+      *timeout = (kdbus_source->timeout_time - now + 999) / 1000;
+      if (*timeout < 0)
+        {
+          kdbus_source->kdbus->priv->timed_out = TRUE;
+          *timeout = 0;
+          return TRUE;
+        }
+    }
+  else
+    *timeout = -1;
+
+  if ((kdbus_source->condition & kdbus_source->pollfd.revents) != 0)
+    return TRUE;
+
+  return FALSE;
+}
+
+static gboolean
+kdbus_source_check (GSource *source)
+{
+  int timeout;
+
+  return kdbus_source_prepare (source, &timeout);
+}
+
+static gboolean
+kdbus_source_dispatch (GSource     *source,
+			GSourceFunc  callback,
+			gpointer     user_data)
+{
+  GKdbusSourceFunc func = (GKdbusSourceFunc)callback;
+  GKdbusSource *kdbus_source = (GKdbusSource *)source;
+  GKdbus *kdbus = kdbus_source->kdbus;
+  gboolean ret;
+
+  if (kdbus_source->kdbus->priv->timed_out)
+    kdbus_source->pollfd.revents |= kdbus_source->condition & (G_IO_IN | G_IO_OUT);
+
+  ret = (*func) (kdbus,
+		 kdbus_source->pollfd.revents & kdbus_source->condition,
+		 user_data);
+
+  if (kdbus->priv->timeout)
+    kdbus_source->timeout_time = g_get_monotonic_time () +
+                                  kdbus->priv->timeout * 1000000;
+
+  else
+    kdbus_source->timeout_time = 0;
+
+  return ret;
+}
+
+static void
+kdbus_source_finalize (GSource *source)
+{
+  GKdbusSource *kdbus_source = (GKdbusSource *)source;
+  GKdbus *kdbus;
+
+  kdbus = kdbus_source->kdbus;
+
+  g_object_unref (kdbus);
+
+  if (kdbus_source->cancellable)
+    {
+      g_cancellable_release_fd (kdbus_source->cancellable);
+      g_object_unref (kdbus_source->cancellable);
+    }
+}
+
+static gboolean
+kdbus_source_closure_callback (GKdbus      *kdbus,
+				GIOCondition  condition,
+				gpointer      data)
+{
+  GClosure *closure = data;
+
+  GValue params[2] = { G_VALUE_INIT, G_VALUE_INIT };
+  GValue result_value = G_VALUE_INIT;
+  gboolean result;
+
+  g_value_init (&result_value, G_TYPE_BOOLEAN);
+
+  g_value_init (&params[0], G_TYPE_KDBUS);
+  g_value_set_object (&params[0], kdbus);
+  g_value_init (&params[1], G_TYPE_IO_CONDITION);
+  g_value_set_flags (&params[1], condition);
+
+  g_closure_invoke (closure, &result_value, 2, params, NULL);
+
+  result = g_value_get_boolean (&result_value);
+  g_value_unset (&result_value);
+  g_value_unset (&params[0]);
+  g_value_unset (&params[1]);
+
+  return result;
+}
+
+static GSourceFuncs kdbus_source_funcs =
+{
+  kdbus_source_prepare,
+  kdbus_source_check,
+  kdbus_source_dispatch,
+  kdbus_source_finalize,
+  (GSourceFunc)kdbus_source_closure_callback,
+  (GSourceDummyMarshal)g_cclosure_marshal_generic,
+};
+
+/*
+ * TODO Windows cases removed when 
+ */
+
+static GSource *
+kdbus_source_new (GKdbus      *kdbus,
+		   GIOCondition  condition,
+		   GCancellable *cancellable)
+{
+  GSource *source;
+  GKdbusSource *kdbus_source;
+
+  condition |= G_IO_HUP | G_IO_ERR;
+
+  source = g_source_new (&kdbus_source_funcs, sizeof (GKdbusSource));
+  g_source_set_name (source, "GKdbus");
+  kdbus_source = (GKdbusSource *)source;
+
+  kdbus_source->kdbus = g_object_ref (kdbus);
+  kdbus_source->condition = condition;
+
+  if (g_cancellable_make_pollfd (cancellable,
+                                 &kdbus_source->cancel_pollfd))
+    {
+      kdbus_source->cancellable = g_object_ref (cancellable);
+      g_source_add_poll (source, &kdbus_source->cancel_pollfd);
+    }
+
+  kdbus_source->pollfd.fd = kdbus->priv->fd;
+  kdbus_source->pollfd.events = condition;
+  kdbus_source->pollfd.revents = 0;
+  g_source_add_poll (source, &kdbus_source->pollfd);
+
+  if (kdbus->priv->timeout)
+    kdbus_source->timeout_time = g_get_monotonic_time () +
+                                  kdbus->priv->timeout * 1000000;
+
+  else
+    kdbus_source->timeout_time = 0;
+
+  return source;
+}
+
+GSource *              
+g_kdbus_create_source (GKdbus                 *kdbus,
+							         GIOCondition            condition,
+							         GCancellable           *cancellable)
+{
+  g_return_val_if_fail (G_IS_KDBUS (kdbus) && (cancellable == NULL || G_IS_CANCELLABLE (cancellable)), NULL);
+
+  return kdbus_source_new (kdbus, condition, cancellable);
+}
+
 /*
  * g_kdbus_receive:
  * @kdbus: a #GKdbus
@@ -376,10 +587,10 @@ g_kdbus_decode_msg(GKdbus           *kdbus,
  */
 gssize
 g_kdbus_receive (GKdbus       *kdbus,
-                 void         *data,
+                 char         *data,
 		             GError       **error)
 {
-  int ret_size;
+  int ret_size = 0;
   guint64 __attribute__ ((__aligned__(8))) offset;
   struct kdbus_msg *msg;
 
@@ -389,6 +600,7 @@ g_kdbus_receive (GKdbus       *kdbus,
   {
 	  if(errno == EINTR)
 		  goto again;
+    g_print ("g_kdbus_receive: ioctl MSG_RECV failed! \n");
 	  return -1;
   }
 
@@ -402,6 +614,7 @@ g_kdbus_receive (GKdbus       *kdbus,
 	{
 		if(errno == EINTR)
 			goto again2;
+    g_print ("g_kdbus_receive: ioctl MSG_RELEASE failed! \n");
 		return -1;
 	}
   
@@ -447,6 +660,7 @@ g_kdbus_send_reply(GDBusWorker     *worker,
 /**
  * g_kdbus_send_message:
  * @kdbus: a #GKdbus
+ * TODO handle errors
  */
 gssize
 g_kdbus_send_message (GDBusWorker     *worker,

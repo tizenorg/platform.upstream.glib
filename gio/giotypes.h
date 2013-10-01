@@ -369,6 +369,22 @@ typedef gboolean (*GSocketSourceFunc) (GSocket *socket,
 				       gpointer user_data);
 
 /**
+ * GKdbusSourceFunc:
+ * @socket: the #GKdbus
+ * @condition: the current condition at the source fired.
+ * @user_data: data passed in by the user.
+ *
+ * This is the function type of the callback used for the #GSource
+ * returned by g_kdbus_create_source().
+ *
+ * Returns: it should return %FALSE if the source should be removed.
+ *
+ */
+typedef gboolean (*GKdbusSourceFunc) (GKdbus *kdbus,
+				       GIOCondition condition,
+				       gpointer user_data);
+
+/**
  * GInputVector:
  * @buffer: Pointer to a buffer where data will be written.
  * @size: the available size in @buffer.

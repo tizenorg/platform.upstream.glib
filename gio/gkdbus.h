@@ -89,7 +89,7 @@ GLIB_AVAILABLE_IN_ALL
 gboolean		            g_kdbus_is_closed 		          (GKdbus           *kdbus);
 GLIB_AVAILABLE_IN_ALL
 gssize                  g_kdbus_receive                 (GKdbus       *kdbus,
-                                                         void         *data,
+                                                         char         *data,
 		                                                     GError       **error);
 GLIB_AVAILABLE_IN_ALL
 gssize                  g_kdbus_send_message            (GDBusWorker     *worker,
@@ -102,6 +102,13 @@ GLIB_AVAILABLE_IN_ALL
 gboolean                g_kdbus_register                (GKdbus           *kdbus);
 GLIB_AVAILABLE_IN_ALL
 gchar*                  g_kdbus_get_sender                (GKdbus           *kdbus);
+GLIB_AVAILABLE_IN_ALL
+GSource *              g_kdbus_create_source           (GKdbus                 *kdbus,
+							                                           GIOCondition             condition,
+							                                           GCancellable            *cancellable);
+GLIB_AVAILABLE_IN_ALL
+GIOCondition           g_kdbus_condition_check         (GKdbus                 *kdbus,
+							                                          GIOCondition             condition);
 
 G_END_DECLS
 

@@ -118,6 +118,29 @@ typedef struct
   gboolean from_mainloop;
 } ReadWithControlData;
 
+typedef struct
+{
+  GKdbus *kdbus;
+  GCancellable *cancellable;
+
+  void *buffer;
+  gsize count;
+
+  GSimpleAsyncResult *simple;
+
+  gboolean from_mainloop;
+} ReadKdbusData;
+
+static void
+read_kdbus_data_free (ReadKdbusData *data)
+{
+  //g_object_unref (data->kdbus); TODO
+  if (data->cancellable != NULL)
+    g_object_unref (data->cancellable);
+  g_object_unref (data->simple);
+  g_free (data);
+}
+
 static void
 read_with_control_data_free (ReadWithControlData *data)
 {
@@ -126,6 +149,38 @@ read_with_control_data_free (ReadWithControlData *data)
     g_object_unref (data->cancellable);
   g_object_unref (data->simple);
   g_free (data);
+}
+
+static gboolean
+_g_kdbus_read_ready (GKdbus      *kdbus,
+                     GIOCondition  condition,
+                     gpointer      user_data)
+{
+  ReadKdbusData *data = user_data;
+  GError *error;
+  gssize result;
+  
+  error = NULL;
+  
+  result = g_kdbus_receive (data->kdbus,
+                            data->buffer,
+                            &error);
+  if (result >= 0)
+    {
+      g_simple_async_result_set_op_res_gssize (data->simple, result);
+    }
+  else
+    {
+      g_assert (error != NULL);
+      g_simple_async_result_take_error (data->simple, error);
+    }
+
+  if (data->from_mainloop)
+    g_simple_async_result_complete (data->simple);
+  else
+    g_simple_async_result_complete_in_idle (data->simple);
+
+  return FALSE;
 }
 
 static gboolean
@@ -166,6 +221,49 @@ _g_socket_read_with_control_messages_ready (GSocket      *socket,
     g_simple_async_result_complete_in_idle (data->simple);
 
   return FALSE;
+}
+
+static void
+_g_kdbus_read (GKdbus                  *kdbus,
+               void                    *buffer,
+               gsize                    count,
+               GCancellable            *cancellable,
+               GAsyncReadyCallback      callback,
+               gpointer                 user_data)
+{
+  ReadKdbusData *data;
+
+  data = g_new0 (ReadKdbusData, 1);
+  data->kdbus = kdbus; /*g_object_ref (socket);*/
+  data->cancellable = cancellable != NULL ? g_object_ref (cancellable) : NULL;
+  data->buffer = buffer;
+  data->count = count;
+
+  data->simple = g_simple_async_result_new (G_OBJECT (kdbus),
+                                            callback,
+                                            user_data,
+                                            _g_kdbus_read);
+  g_simple_async_result_set_check_cancellable (data->simple, cancellable);
+
+  if (!g_kdbus_condition_check (kdbus, G_IO_IN))
+    {
+      GSource *source;
+      data->from_mainloop = TRUE;
+      source = g_kdbus_create_source (data->kdbus,
+                                       G_IO_IN | G_IO_HUP | G_IO_ERR,
+                                       cancellable);
+      g_source_set_callback (source,
+                             (GSourceFunc) _g_kdbus_read_ready,
+                             data,
+                             (GDestroyNotify) read_kdbus_data_free);
+      g_source_attach (source, g_main_context_get_thread_default ());
+      g_source_unref (source);
+    }
+  else
+    {
+      _g_kdbus_read_ready (data->kdbus, G_IO_IN, data);
+      read_kdbus_data_free (data);
+    }
 }
 
 static void
@@ -214,6 +312,22 @@ _g_socket_read_with_control_messages (GSocket                 *socket,
       _g_socket_read_with_control_messages_ready (data->socket, G_IO_IN, data);
       read_with_control_data_free (data);
     }
+}
+
+static gssize
+_g_kdbus_read_finish (GKdbus       *kdbus,
+                                             GAsyncResult  *result,
+                                             GError       **error)
+{
+  GSimpleAsyncResult *simple = G_SIMPLE_ASYNC_RESULT (result);
+
+  g_return_val_if_fail (G_IS_KDBUS (kdbus), -1);
+  g_warn_if_fail (g_simple_async_result_get_source_tag (simple) == _g_kdbus_read);
+
+  if (g_simple_async_result_propagate_error (simple, error))
+      return -1;
+  else
+    return g_simple_async_result_get_op_res_gssize (simple);
 }
 
 static gssize
@@ -586,7 +700,12 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
     goto out;
 
   error = NULL;
-  if (worker->socket == NULL)
+  if (G_IS_KDBUS_CONNECTION (worker->stream))
+    {
+      bytes_read = _g_kdbus_read_finish (worker->kdbus,
+                                         res,
+                                         &error);
+  } else if (worker->socket == NULL)
     bytes_read = g_input_stream_read_finish (g_io_stream_get_input_stream (worker->stream),
                                              res,
                                              &error);
@@ -848,7 +967,21 @@ _g_dbus_worker_do_read_unlocked (GDBusWorker *worker)
       worker->read_buffer = g_realloc (worker->read_buffer, worker->read_buffer_allocated_size);
     }
 
-  if (worker->socket == NULL)
+  if (G_IS_KDBUS_CONNECTION (worker->stream))
+    {
+      //GError *error;
+      //error = NULL;
+
+      
+      _g_kdbus_read(worker->kdbus, 
+                    worker->read_buffer,
+                    worker->read_buffer_bytes_wanted,
+                                            worker->cancellable,
+                                            (GAsyncReadyCallback) _g_dbus_worker_do_read_cb,
+                                            _g_dbus_worker_ref (worker));
+      
+
+  } else if (worker->socket == NULL)
     g_input_stream_read_async (g_io_stream_get_input_stream (worker->stream),
                                worker->read_buffer + worker->read_buffer_cur_size,
                                worker->read_buffer_bytes_wanted - worker->read_buffer_cur_size,
@@ -880,7 +1013,7 @@ _g_dbus_worker_do_initial_read (gpointer data)
   //g_mutex_lock (&worker->read_lock);
   //_g_dbus_worker_do_read_unlocked (worker);
   //g_mutex_unlock (&worker->read_lock);
-  //return FALSE;
+  return FALSE;
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
