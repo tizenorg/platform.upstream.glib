@@ -301,9 +301,11 @@ gboolean g_kdbus_register(GKdbus           *kdbus)
 	return TRUE;
 }
 
+/* TODO: [KDBUS] To remove */
+/*
 GIOCondition
-g_kdbus_condition_check(GKdbus *kdbus,
-			                  GIOCondition  condition)
+g_kdbus_condition_check (GKdbus *kdbus,
+	                 GIOCondition  condition)
 {
   GPollFD poll_fd;
   gint result;  
@@ -320,9 +322,8 @@ g_kdbus_condition_check(GKdbus *kdbus,
   while (result == -1 && errno == EINTR);
 
   return poll_fd.revents;
-  
 }
-
+*/
 
 /*
  * g_kdbus_decode_msg:
@@ -762,40 +763,3 @@ out:
   return blob_size;
 }
 
-/***************************************************************************************************************
-
-
-/**
- * g_kdbus_send:
- * @kdbus: a #GKdbus
- */
-/*gssize
-g_kdbus_send (GKdbus       *kdbus,
-	       const gchar   *buffer,
-	       gsize          size,
-	       GCancellable  *cancellable,
-	       GError       **error)
-{
-  // TODO
-}*/
-
-
-
-
-/**
- * g_kdbus_receive_message:
- * @kdbus: a #Gkdbus
- */
-/*gssize
-g_kdbus_receive_message (Gkdbus                 *kdbus,
-			  GkdbusAddress         **address,
-			  GInputVector            *vectors,
-			  gint                     num_vectors,
-			  GkdbusControlMessage ***messages,
-			  gint                    *num_messages,
-			  gint                    *flags,
-			  GCancellable            *cancellable,
-			  GError                 **error)
-{
-  //TODO
-}*/

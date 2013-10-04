@@ -232,6 +232,7 @@ _g_kdbus_read (GKdbus                  *kdbus,
                gpointer                 user_data)
 {
   ReadKdbusData *data;
+  GSource *source;
 
   data = g_new0 (ReadKdbusData, 1);
   data->kdbus = kdbus; /*g_object_ref (socket);*/
@@ -245,25 +246,16 @@ _g_kdbus_read (GKdbus                  *kdbus,
                                             _g_kdbus_read);
   g_simple_async_result_set_check_cancellable (data->simple, cancellable);
 
-  if (!g_kdbus_condition_check (kdbus, G_IO_IN))
-    {
-      GSource *source;
-      data->from_mainloop = TRUE;
-      source = g_kdbus_create_source (data->kdbus,
-                                       G_IO_IN | G_IO_HUP | G_IO_ERR,
-                                       cancellable);
-      g_source_set_callback (source,
-                             (GSourceFunc) _g_kdbus_read_ready,
-                             data,
-                             (GDestroyNotify) read_kdbus_data_free);
-      g_source_attach (source, g_main_context_get_thread_default ());
-      g_source_unref (source);
-    }
-  else
-    {
-      _g_kdbus_read_ready (data->kdbus, G_IO_IN, data);
-      read_kdbus_data_free (data);
-    }
+  data->from_mainloop = TRUE;
+  source = g_kdbus_create_source (data->kdbus,
+                                   G_IO_IN | G_IO_HUP | G_IO_ERR,
+                                   cancellable);
+  g_source_set_callback (source,
+                         (GSourceFunc) _g_kdbus_read_ready,
+                         data,
+                         (GDestroyNotify) read_kdbus_data_free);
+  g_source_attach (source, g_main_context_get_thread_default ());
+  g_source_unref (source);
 }
 
 static void
@@ -843,6 +835,11 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
   read_message_print_transport_debug (bytes_read, worker);
 
   worker->read_buffer_cur_size += bytes_read;
+
+  /* TODO: [KDBUS] Sprawdzic pole read_buffer_bytes_wanted */
+  if (G_IS_KDBUS_CONNECTION (worker->stream))
+    worker->read_buffer_bytes_wanted = worker->read_buffer_cur_size;
+
   if (worker->read_buffer_bytes_wanted == worker->read_buffer_cur_size)
     {
       /* OK, got what we asked for! */
@@ -1009,10 +1006,10 @@ _g_dbus_worker_do_read_unlocked (GDBusWorker *worker)
 static gboolean
 _g_dbus_worker_do_initial_read (gpointer data)
 {
-  //GDBusWorker *worker = data;
-  //g_mutex_lock (&worker->read_lock);
-  //_g_dbus_worker_do_read_unlocked (worker);
-  //g_mutex_unlock (&worker->read_lock);
+  GDBusWorker *worker = data;
+  g_mutex_lock (&worker->read_lock);
+  _g_dbus_worker_do_read_unlocked (worker);
+  g_mutex_unlock (&worker->read_lock);
   return FALSE;
 }
 
@@ -1129,13 +1126,11 @@ write_message_continue_writing (MessageToWriteData *data)
       GError *error;
       error = NULL;
       data->total_written = g_kdbus_send_message(data->worker, data->worker->kdbus, data->message, data->blob, data->blob_size, &error);
-      
-      if (data->total_written == data->blob_size)
-        {
-          g_simple_async_result_complete (simple);
-          g_object_unref (simple);
-          goto out;
-        }
+    
+      write_message_print_transport_debug (data->total_written, data);  
+      g_simple_async_result_complete (simple);
+      g_object_unref (simple);
+      goto out;
     }
   else
     {
