@@ -2306,12 +2306,11 @@ write_message_print_transport_debug (gssize bytes_written,
   g_print ("========================================================================\n"
            "GDBus-debug:Transport:\n"
            "  >>>> WROTE %" G_GSIZE_FORMAT " bytes of message with serial %d and\n"
-           "       size %" G_GSIZE_FORMAT " from offset %" G_GSIZE_FORMAT " on a %s\n",
+           "       size %" G_GSIZE_FORMAT " from offset %" G_GSIZE_FORMAT "\n",
            bytes_written,
            g_dbus_message_get_serial (data->message),
            data->blob_size,
-           data->total_written,
-           g_type_name (G_TYPE_FROM_INSTANCE (g_io_stream_get_output_stream (data->worker->stream))));
+           data->total_written);
   _g_dbus_debug_print_unlock ();
  out:
   ;
@@ -2357,12 +2356,11 @@ read_message_print_transport_debug (gssize bytes_read,
   g_print ("========================================================================\n"
            "GDBus-debug:Transport:\n"
            "  <<<< READ %" G_GSIZE_FORMAT " bytes of message with serial %d and\n"
-           "       size %d to offset %" G_GSIZE_FORMAT " from a %s\n",
+           "       size %d to offset %" G_GSIZE_FORMAT "\n",
            bytes_read,
            serial,
            message_length,
-           worker->read_buffer_cur_size,
-           g_type_name (G_TYPE_FROM_INSTANCE (g_io_stream_get_input_stream (worker->stream))));
+           worker->read_buffer_cur_size);
   _g_dbus_debug_print_unlock ();
  out:
   ;
