@@ -76,13 +76,13 @@ GLIB_AVAILABLE_IN_ALL
 gboolean           g_kdbus_connection_is_connected              (GKdbusConnection  *connection);
 GLIB_AVAILABLE_IN_ALL
 gboolean           g_kdbus_connection_connect                   (GKdbusConnection  *connection,
-								 const gchar       *address,
-								 GCancellable      *cancellable,
-								 GError           **error);
+                                								 const gchar       *address,
+								                                 GCancellable      *cancellable,
+								                                 GError           **error);
 GLIB_AVAILABLE_IN_ALL
-gboolean           g_kdbus_connection_close			(GIOStream         *stream,
-			   					 GCancellable      *cancellable,
-			   					 GError           **error);
+gboolean           g_kdbus_connection_close			            (GIOStream         *stream,
+			   					                                 GCancellable      *cancellable,
+			   					                                 GError           **error);
 GLIB_AVAILABLE_IN_ALL
 GKdbus            *g_kdbus_connection_get_kdbus                 (GKdbusConnection  *connection);
 

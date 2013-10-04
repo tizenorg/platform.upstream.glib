@@ -42,12 +42,12 @@
 #include "glib/gstdio.h"
 #include "gsocketcontrolmessage.h"
 #include "gsocketconnection.h"
-#include "gkdbusconnection.h"
 #include "gsocketoutputstream.h"
 
 #ifdef G_OS_UNIX
 #include "gunixfdmessage.h"
 #include "gunixconnection.h"
+#include "gkdbusconnection.h"
 #include "gunixcredentialsmessage.h"
 #endif
 
@@ -966,10 +966,6 @@ _g_dbus_worker_do_read_unlocked (GDBusWorker *worker)
 
   if (G_IS_KDBUS_CONNECTION (worker->stream))
     {
-      //GError *error;
-      //error = NULL;
-
-      
       _g_kdbus_read(worker->kdbus, 
                     worker->read_buffer,
                     worker->read_buffer_bytes_wanted,
@@ -1780,10 +1776,6 @@ _g_dbus_worker_send_message (GDBusWorker    *worker,
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
-GKdbus*        g_dbus_worker_get_kdbus    (GDBusWorker  *worker)
-{
-  return worker->kdbus;
-}
 
 GDBusWorker *
 _g_dbus_worker_new (GIOStream                              *stream,

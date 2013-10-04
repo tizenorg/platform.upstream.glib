@@ -34,7 +34,6 @@
 #include "gioenumtypes.h"
 #include "gnetworkaddress.h"
 #include "gsocketclient.h"
-#include "gkdbusconnection.h"
 #include "giostream.h"
 #include "gasyncresult.h"
 #include "gsimpleasyncresult.h"
@@ -45,6 +44,7 @@
 
 #ifdef G_OS_UNIX
 #include <gio/gunixsocketaddress.h>
+#include <gio/gkdbusconnection.h>
 #endif
 
 #ifdef G_OS_WIN32
@@ -554,7 +554,7 @@ g_dbus_address_connect (const gchar   *address_entry,
     {
     }
 #ifdef G_OS_UNIX
-  else if (g_strcmp0 (transport_name, "unix") == 0)
+  else if ((g_strcmp0 (transport_name, "unix") == 0) || (g_strcmp0 (transport_name, "kdbus") == 0))
     {
       const gchar *path;
       const gchar *abstract;
@@ -578,28 +578,6 @@ g_dbus_address_connect (const gchar   *address_entry,
           connectable = G_SOCKET_CONNECTABLE (g_unix_socket_address_new_with_type (abstract,
                                                                                    -1,
                                                                                    G_UNIX_SOCKET_ADDRESS_ABSTRACT));
-        }
-      else
-        {
-          g_assert_not_reached ();
-        }
-    }
-  else if (g_strcmp0 (transport_name, "kdbus") == 0)
-    {
-      const gchar *path;
-      path = g_hash_table_lookup (key_value_pairs, "path");
-      if (path == NULL)
-        {
-          g_set_error (error,
-                       G_IO_ERROR,
-                       G_IO_ERROR_INVALID_ARGUMENT,
-                       _("Error in address `%s' - the kdbus transport requires "
-                         "key `path' to be set"),
-                       address_entry);
-        }
-      else if (path != NULL)
-        {
-          connectable = G_SOCKET_CONNECTABLE (g_unix_socket_address_new (path));
         }
       else
         {

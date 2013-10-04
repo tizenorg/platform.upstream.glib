@@ -24,9 +24,9 @@
 #include <fcntl.h>
 #include "config.h"
 
-#include "gkdbusconnection.h"
-
 #include <gio/gtask.h>
+
+#include "gkdbusconnection.h"
 #include "gunixconnection.h"
 
 
@@ -47,34 +47,45 @@ struct _GKdbusConnectionPrivate
   gboolean       in_dispose;
 };
 
-// TODO
+/*
+ * g_kdbus_connection_new:
+ *
+ */
 GKdbusConnection *
 g_kdbus_connection_new (void)
 {
   return g_object_new(G_TYPE_KDBUS_CONNECTION,NULL);
 }
 
-// TODO
+/*
+ * g_kdbus_connection_connect:
+ *
+ */
 gboolean
-g_kdbus_connection_connect (GKdbusConnection   *connection,
-			    const gchar        *address,
-			    GCancellable       *cancellable,
-			    GError             **error)
+g_kdbus_connection_connect  (GKdbusConnection   *connection,
+			                 const gchar        *address,
+			                 GCancellable       *cancellable,
+			                 GError             **error)
 {
   g_return_val_if_fail (G_IS_KDBUS_CONNECTION (connection), FALSE);
 
-  return g_kdbus_open (connection->priv->kdbus, address,
-			   cancellable, error);
+  return g_kdbus_open (connection->priv->kdbus,address,cancellable,error);
 }
 
-// TODO
+/*
+ * g_kdbus_connection_is_connected:
+ *
+ */
 gboolean
 g_kdbus_connection_is_connected (GKdbusConnection  *connection)
 {
   return (!g_kdbus_is_closed (connection->priv->kdbus));
 }
 
-// TODO
+/*
+ * g_kdbus_connection_get_property:
+ *
+ */
 static void
 g_kdbus_connection_get_property (GObject    *object,
                                   guint       prop_id,
@@ -82,15 +93,17 @@ g_kdbus_connection_get_property (GObject    *object,
                                   GParamSpec *pspec)
 {
   //GKdbusConnection *connection = G_KDBUS_CONNECTION (object);
-
   switch (prop_id)
     {
       default:
-	G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+	    G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
     }
 }
 
-// TODO
+/*
+ * g_kdbus_connection_set_property
+ *
+ */
 static void
 g_kdbus_connection_set_property (GObject      *object,
                                   guint         prop_id,
@@ -98,11 +111,10 @@ g_kdbus_connection_set_property (GObject      *object,
                                   GParamSpec   *pspec)
 {
   //GKdbusConnection *connection = G_KDBUS_CONNECTION (object);
-
   switch (prop_id)
     {
-    default:
-      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      default:
+        G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
     }
 }
 
@@ -120,17 +132,22 @@ g_kdbus_connection_dispose (GObject *object)
   connection->priv->in_dispose = FALSE;
 }
 
-// TODO
+/*
+ * g_kdbus_connection_finalize:
+ *
+ */
 static void
 g_kdbus_connection_finalize (GObject *object)
 {
   //GKdbusConnection *connection = G_KDBUS_CONNECTION (object);
-
   G_OBJECT_CLASS (g_kdbus_connection_parent_class)
     ->finalize (object);
 }
 
-// TODO
+/*
+ * g_kdbus_connection_close
+ *
+ */
 gboolean
 g_kdbus_connection_close (GIOStream     *stream,
 			   GCancellable  *cancellable,
@@ -145,7 +162,10 @@ g_kdbus_connection_close (GIOStream     *stream,
   return TRUE; 
 }
 
-// TODO:
+/*
+ * g_kdbus_connection_class_init:
+ *
+ */
 static void
 g_kdbus_connection_class_init (GKdbusConnectionClass *klass)
 {
@@ -159,7 +179,10 @@ g_kdbus_connection_class_init (GKdbusConnectionClass *klass)
   gobject_class->dispose = g_kdbus_connection_dispose;
 }
 
-// TODO
+/*
+ * g_kdbus_connection_init:
+ *
+ */
 static void
 g_kdbus_connection_init (GKdbusConnection *connection)
 {
@@ -169,13 +192,8 @@ g_kdbus_connection_init (GKdbusConnection *connection)
   connection->priv->kdbus = g_object_new(G_TYPE_KDBUS,NULL);
 }
 
-/**
- * g_kdbus_connection_get_kdbus:
- * @connection: a #GKdbusConnection
- *
- * Gets the underlying #GKdbus object of the connection.
- *
- * Returns: (transfer none): a #GSocketAddress or %NULL on error.
+/*
+ * g_kdbus_connection_get_kdbus: gets the underlying #GKdbus object of the connection.
  *
  */
 GKdbus *
@@ -185,5 +203,4 @@ g_kdbus_connection_get_kdbus (GKdbusConnection *connection)
 
   return connection->priv->kdbus;
 }
-
 

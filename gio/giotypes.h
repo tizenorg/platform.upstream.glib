@@ -259,15 +259,6 @@ typedef struct _GVolumeMonitor                GVolumeMonitor;
 typedef struct _GKdbus                  GKdbus;
 
 /**
- * GKdbusClient:
- *
- * A helper class for kdbus clients to make connections.
- *
- **/
-
-typedef struct _GKdbusClient                  GKdbusClient;
-
-/**
  * GKdbusConnection:
  *
  * A kdbus connection GIOStream object.

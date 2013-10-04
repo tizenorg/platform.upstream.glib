@@ -52,7 +52,6 @@
 #include "kdbus.h"
 #include "gdbusmessage.h"
 #include "gdbusconnection.h"
-//#include "gclosure.h"
 
 #define KDBUS_PART_FOREACH(part, head, first)				\
 	for (part = (head)->first;					\
@@ -71,12 +70,10 @@
 	(typeof(part))(((guint8 *)part) + KDBUS_ALIGN8((part)->size))
 #define KDBUS_ITEM_SIZE(s) KDBUS_ALIGN8((s) + KDBUS_PART_HEADER_SIZE)
 
-/**
+/*
  * SECTION:gkdbus
  * @short_description: Low-level kdbus object
  * @include: gio/gio.h
- * @see_also: #GInitable, <link linkend="gio-gnetworking.h">gnetworking.h</link>
- *
  */
 
 static void     g_kdbus_initable_iface_init (GInitableIface  *iface);
@@ -101,7 +98,10 @@ struct _GKdbusPrivate
   guint           timed_out : 1;
 };
 
-// TODO:
+/*
+ * g_kdbus_get_property:
+ * TODO: Compare with gsocket
+ */
 static void
 g_kdbus_get_property (GObject    *object,
 		       guint       prop_id,
@@ -117,7 +117,10 @@ g_kdbus_get_property (GObject    *object,
     }
 }
 
-// TODO:
+/*
+ * g_kdbus_set_property:
+ * TODO: Compare with gsocket
+ */
 static void
 g_kdbus_set_property (GObject      *object,
 		       guint         prop_id,
@@ -133,16 +136,21 @@ g_kdbus_set_property (GObject      *object,
     }
 }
 
-// TODO:
+/*
+ * g_kdbus_finalize:
+ * TODO: Compare with gsocket
+ */
 static void
 g_kdbus_finalize (GObject *object)
 {
   //GKdbus *kdbus = G_KDBUS (object);
 
-  // TODO: Posprzatac po obiekcie
-
 }
 
+/*
+ * g_kdbus_class_init:
+ *
+ */
 static void
 g_kdbus_class_init (GKdbusClass *klass)
 {
@@ -155,12 +163,20 @@ g_kdbus_class_init (GKdbusClass *klass)
   gobject_class->get_property = g_kdbus_get_property;
 }
 
+/*
+ * g_kdbus_initable_iface_init:
+ * TODO: Compare with goscket
+ */
 static void
 g_kdbus_initable_iface_init (GInitableIface *iface)
 {
   iface->init = g_kdbus_initable_init;
 }
 
+/*
+ * g_kdbus_init:
+ * TODO: Compare with gsocket
+ */
 static void
 g_kdbus_init (GKdbus *kdbus)
 {
@@ -195,11 +211,9 @@ g_kdbus_initable_init (GInitable *initable,
   return TRUE;
 }
 
-/**
- * g_kdbus_get_fd:
- * @kdbus: a #GKdbus.
+/*
+ * g_kdbus_get_fd: returns the file descriptor of the kdbus
  *
- * Returns: the file descriptor of the kdbus.
  */
 gint
 g_kdbus_get_fd (GKdbus *kdbus)
@@ -209,9 +223,9 @@ g_kdbus_get_fd (GKdbus *kdbus)
   return kdbus->priv->fd;
 }
 
-/**
- * g_kdbus_connect:
- * @kdbus: a #Gkdbus.
+/*
+ * g_kdbus_open:
+ * TODO: Compare with gsocket, error handlers 
  */
 gboolean
 g_kdbus_open (GKdbus         *kdbus,
@@ -221,21 +235,18 @@ g_kdbus_open (GKdbus         *kdbus,
 {
   g_return_val_if_fail (G_IS_KDBUS (kdbus), FALSE);
   kdbus->priv->fd = open(address, O_RDWR|O_CLOEXEC|O_NONBLOCK);
+  
   return TRUE;
 }
 
-/**
+/*
  * g_kdbus_close:
- * @kdbus: a #GKdbus
- * @error: #GError for error reporting, or %NULL to ignore.
- *
+ * TODO: Compare with gsocket
  */
 gboolean
 g_kdbus_close (GKdbus  *kdbus,
 		GError  **error)
 {
-  // TODO
-
   close(kdbus->priv->fd);
 
   kdbus->priv->closed = TRUE;
@@ -244,13 +255,9 @@ g_kdbus_close (GKdbus  *kdbus,
   return TRUE;
 }
 
-/**
- * g_kdbus_is_closed:
- * @kdbus: a #GKdbus
- *
- * Checks whether a kdbus is closed.
- *
- * Returns: %TRUE if kdbus is closed, %FALSE otherwise
+/*
+ * g_kdbus_is_closed: checks whether a kdbus is closed.
+ * TODO: Compare with gsocket
  */
 gboolean
 g_kdbus_is_closed (GKdbus *kdbus)
@@ -260,75 +267,51 @@ g_kdbus_is_closed (GKdbus *kdbus)
   return kdbus->priv->closed;
 }
 
-/**
- * Registration on Kdbus bus.
- * Hello message + unique name + mapping memory for incoming messages.
- *
- * @returns #TRUE on success
+/*
+ * g_kdbus_register: hello message + unique name + mapping memory for incoming messages
+ * TODO: 
  */
 gboolean g_kdbus_register(GKdbus           *kdbus)
 {
-	struct kdbus_cmd_hello __attribute__ ((__aligned__(8))) hello;
+  struct kdbus_cmd_hello __attribute__ ((__aligned__(8))) hello;
 
-	hello.conn_flags = KDBUS_HELLO_ACCEPT_FD/* |
-			   KDBUS_HELLO_ATTACH_COMM |
-			   KDBUS_HELLO_ATTACH_EXE |
-			   KDBUS_HELLO_ATTACH_CMDLINE |
-			   KDBUS_HELLO_ATTACH_CAPS |
-			   KDBUS_HELLO_ATTACH_CGROUP |
-			   KDBUS_HELLO_ATTACH_SECLABEL |
-			   KDBUS_HELLO_ATTACH_AUDIT*/;
-	hello.size = sizeof(struct kdbus_cmd_hello);
-	hello.pool_size = RECEIVE_POOL_SIZE;
+  hello.conn_flags = KDBUS_HELLO_ACCEPT_FD/*    |
+                     KDBUS_HELLO_ATTACH_COMM    |
+                     KDBUS_HELLO_ATTACH_EXE     |
+                     KDBUS_HELLO_ATTACH_CMDLINE |
+                     KDBUS_HELLO_ATTACH_CAPS    |
+                     KDBUS_HELLO_ATTACH_CGROUP  |
+                     KDBUS_HELLO_ATTACH_SECLABEL|
+                     KDBUS_HELLO_ATTACH_AUDIT*/;
+  hello.size = sizeof(struct kdbus_cmd_hello);
+  hello.pool_size = RECEIVE_POOL_SIZE;
 
-	if (ioctl(kdbus->priv->fd, KDBUS_CMD_HELLO, &hello))
-	{
-		g_print("FD: %d Failed to send hello: %m, %d",kdbus->priv->fd,errno);
-		return FALSE;
-	}
+  if (ioctl(kdbus->priv->fd, KDBUS_CMD_HELLO, &hello))
+    {
+      g_error(" KDBUS_DEBUG: (%s()): fd=%d failed to send hello: %m, %d",__FUNCTION__,kdbus->priv->fd,errno);
+      return FALSE;
+    }
 
   kdbus->priv->peer_id = hello.id;
-	g_print("-- Our peer ID is: %llu\n", hello.id);
-	// TODO (ASK RADEK)transportS->bloom_size = hello.bloom_size;
 
-	kdbus->priv->buffer_ptr = mmap(NULL, RECEIVE_POOL_SIZE, PROT_READ, MAP_SHARED, kdbus->priv->fd, 0);
-	if (kdbus->priv->buffer_ptr == MAP_FAILED)
-	{
-		g_print("Error when mmap: %m, %d",errno);
-		return FALSE;
-	}
+  #ifdef KDBUS_DEBUG
+    g_print(" KDBUS_DEBUG: (%s()): Our peer ID=%llu\n",__FUNCTION__,hello.id);
+  #endif
+   
+  //TODO: (ASK RADEK) transportS->bloom_size = hello.bloom_size;
+  kdbus->priv->buffer_ptr = mmap(NULL, RECEIVE_POOL_SIZE, PROT_READ, MAP_SHARED, kdbus->priv->fd, 0);
+  if (kdbus->priv->buffer_ptr == MAP_FAILED)
+    {
+      g_error(" KDBUS_DEBUG: (%s()): error when mmap: %m, %d",__FUNCTION__,errno);
+      return FALSE;
+  }
 
-	return TRUE;
+  return TRUE;
 }
 
-/* TODO: [KDBUS] To remove */
 /*
-GIOCondition
-g_kdbus_condition_check (GKdbus *kdbus,
-	                 GIOCondition  condition)
-{
-  GPollFD poll_fd;
-  gint result;  
-  g_return_val_if_fail (G_IS_KDBUS (kdbus), 0);
-
-  //if (!check_socket (socket, NULL)) TODO !check for valid kdbus!
-  //  return 0;  
-  poll_fd.fd = kdbus->priv->fd;
-  poll_fd.events = condition;
-  poll_fd.revents = 0;
-
-  do
-    result = g_poll (&poll_fd, 1, 0);
-  while (result == -1 && errno == EINTR);
-
-  return poll_fd.revents;
-}
-*/
-
-/*
- * g_kdbus_decode_msg:
- * @kdbus_msg: kdbus message received into buffer
- *
+ * g_kdbus_decode_msg: kdbus message received into buffer
+ * TODO:
  */
 static int 
 g_kdbus_decode_msg(GKdbus           *kdbus,
@@ -340,55 +323,58 @@ g_kdbus_decode_msg(GKdbus           *kdbus,
 
   KDBUS_PART_FOREACH(item, msg, items)
 	{
-		if (item->size <= KDBUS_PART_HEADER_SIZE)
-		{
-			g_print("  +(%llu bytes) invalid data record\n", item->size);
-			break;  //??? continue (because dbus will find error) or break
-		}
+      if (item->size <= KDBUS_PART_HEADER_SIZE)
+	    {
+		  g_error(" KDBUS_DEBUG: (%s()): %llu bytes - invalid data record\n",__FUNCTION__,item->size);
+		  break; //TODO: continue (because dbus will find error) or break
+	    }
 
 		switch (item->type)
 		{
-			case KDBUS_MSG_PAYLOAD_OFF:
-				memcpy(data, (char *)kdbus->priv->buffer_ptr + item->vec.offset, item->vec.size);
-				data += item->vec.size;
-				ret_size += item->vec.size;			
+		  case KDBUS_MSG_PAYLOAD_OFF:
+		    memcpy(data, (char *)kdbus->priv->buffer_ptr + item->vec.offset, item->vec.size);
+		    data += item->vec.size;
+			ret_size += item->vec.size;			
 
-				g_print("  + KDBUS_MSG_PAYLOAD (%llu bytes) off=%llu size=%llu\n", item->size,
-					(unsigned long long)item->vec.offset,
-					(unsigned long long)item->vec.size);
+            #ifdef KDBUS_DEBUG 
+			  g_print(" KDBUS_DEBUG: (%s()): KDBUS_MSG_PAYLOAD: %llu bytes, off=%llu, size=%llu\n",__FUNCTION__,item->size,
+			    (unsigned long long)item->vec.offset,
+				(unsigned long long)item->vec.size);
+            #endif
 			break;
 
-      case KDBUS_MSG_REPLY_TIMEOUT:
-				g_print("  + KDBUS_MSG_REPLY_TIMEOUT (%llu bytes) cookie=%llu\n", item->size, msg->cookie_reply);
+          case KDBUS_MSG_REPLY_TIMEOUT:
 
-				/* TODO
-        message = generate_local_error_message(msg->cookie_reply, DBUS_ERROR_NO_REPLY, NULL);
-				if(message == NULL)
-				{
-					ret_size = -1;
-					goto out;
-				}
+            #ifdef KDBUS_DEBUG 
+		      g_print(" KDBUS_DEBUG: (%s()): KDBUS_MSG_REPLY_TIMEOUT: %llu bytes, cookie=%llu\n",__FUNCTION__,item->size, msg->cookie_reply);
+            #endif
+
+			/* TODO
+              message = generate_local_error_message(msg->cookie_reply, DBUS_ERROR_NO_REPLY, NULL);
+			    if(message == NULL)
+				  {
+				    ret_size = -1;
+				    goto out;
+				  }
 
 				ret_size = put_message_into_data(message, data);
-        */
+            */
 			break;
 
-			case KDBUS_MSG_REPLY_DEAD:
-				g_print("  + (%llu bytes) cookie=%llu\n", item->size, msg->cookie_reply);
+		  case KDBUS_MSG_REPLY_DEAD:
+		    g_print(" KDBUS_DEBUG: (%s()): KDBUS_MSG_REPLY_DEAD: %llu bytes, cookie=%llu\n",__FUNCTION__,item->size, msg->cookie_reply);
 
-        /* TODO
-				message = generate_local_error_message(msg->cookie_reply, DBUS_ERROR_NAME_HAS_NO_OWNER, NULL);
-				if(message == NULL)
-				{
-					ret_size = -1;
-					goto out;
+            /* TODO
+			  message = generate_local_error_message(msg->cookie_reply, DBUS_ERROR_NAME_HAS_NO_OWNER, NULL);
+			  if(message == NULL)
+			    {
+				  ret_size = -1;
+				  goto out;
 				}
         
-				ret_size = put_message_into_data(message, data);
-        */
+			  ret_size = put_message_into_data(message, data);
+            */
 			break;
-
-      /* case ... */
     }
   }
 
@@ -405,6 +391,10 @@ typedef struct {
   gint64        timeout_time;
 } GKdbusSource;
 
+/*
+ * kdbus_source_prepare:
+ * TODO: Do We Need This?
+ */
 static gboolean
 kdbus_source_prepare (GSource *source,
 		       gint    *timeout)
@@ -437,6 +427,10 @@ kdbus_source_prepare (GSource *source,
   return FALSE;
 }
 
+/*
+ * kdbus_source_check:
+ * TODO: Do We Need This?
+ */
 static gboolean
 kdbus_source_check (GSource *source)
 {
@@ -445,10 +439,14 @@ kdbus_source_check (GSource *source)
   return kdbus_source_prepare (source, &timeout);
 }
 
+/*
+ * kdbus_source_dispatch
+ * TODO: Do We Need This?
+ */
 static gboolean
-kdbus_source_dispatch (GSource     *source,
-			GSourceFunc  callback,
-			gpointer     user_data)
+kdbus_source_dispatch  (GSource     *source,
+			            GSourceFunc  callback,
+			            gpointer     user_data)
 {
   GKdbusSourceFunc func = (GKdbusSourceFunc)callback;
   GKdbusSource *kdbus_source = (GKdbusSource *)source;
@@ -472,6 +470,10 @@ kdbus_source_dispatch (GSource     *source,
   return ret;
 }
 
+/*
+ * kdbus_source_finalize
+ * TODO: Do We Need This?
+ */
 static void
 kdbus_source_finalize (GSource *source)
 {
@@ -489,13 +491,16 @@ kdbus_source_finalize (GSource *source)
     }
 }
 
+/*
+ * kdbus_source_closure_callback:
+ * TODO: Do We Need This?
+ */
 static gboolean
-kdbus_source_closure_callback (GKdbus      *kdbus,
-				GIOCondition  condition,
-				gpointer      data)
+kdbus_source_closure_callback (GKdbus         *kdbus,
+				                GIOCondition  condition,
+				                gpointer      data)
 {
   GClosure *closure = data;
-
   GValue params[2] = { G_VALUE_INIT, G_VALUE_INIT };
   GValue result_value = G_VALUE_INIT;
   gboolean result;
@@ -524,17 +529,16 @@ static GSourceFuncs kdbus_source_funcs =
   kdbus_source_dispatch,
   kdbus_source_finalize,
   (GSourceFunc)kdbus_source_closure_callback,
-  (GSourceDummyMarshal)g_cclosure_marshal_generic,
 };
 
 /*
- * TODO Windows cases removed when 
+ * kdbus_source_new:
+ *
  */
-
 static GSource *
-kdbus_source_new (GKdbus      *kdbus,
-		   GIOCondition  condition,
-		   GCancellable *cancellable)
+kdbus_source_new (GKdbus        *kdbus,
+		          GIOCondition  condition,
+		          GCancellable  *cancellable)
 {
   GSource *source;
   GKdbusSource *kdbus_source;
@@ -570,10 +574,14 @@ kdbus_source_new (GKdbus      *kdbus,
   return source;
 }
 
+/*
+ * g_kdbus_create_source:
+ *
+ */
 GSource *              
-g_kdbus_create_source (GKdbus                 *kdbus,
-							         GIOCondition            condition,
-							         GCancellable           *cancellable)
+g_kdbus_create_source (GKdbus         *kdbus,
+					   GIOCondition   condition,
+					   GCancellable   *cancellable)
 {
   g_return_val_if_fail (G_IS_KDBUS (kdbus) && (cancellable == NULL || G_IS_CANCELLABLE (cancellable)), NULL);
 
@@ -582,58 +590,61 @@ g_kdbus_create_source (GKdbus                 *kdbus,
 
 /*
  * g_kdbus_receive:
- * @kdbus: a #GKdbus
- *
- * TODO handle errors
+ * TODO: Handle errors
  */
 gssize
 g_kdbus_receive (GKdbus       *kdbus,
                  char         *data,
-		             GError       **error)
+		         GError       **error)
 {
   int ret_size = 0;
   guint64 __attribute__ ((__aligned__(8))) offset;
   struct kdbus_msg *msg;
 
-  // get memory offset of msg
+  //get memory offset of msg
   again:
-  if (ioctl(kdbus->priv->fd, KDBUS_CMD_MSG_RECV, &offset) < 0)
-  {
-	  if(errno == EINTR)
+    if (ioctl(kdbus->priv->fd, KDBUS_CMD_MSG_RECV, &offset) < 0)
+      {
+	    if(errno == EINTR)
 		  goto again;
-    g_print ("g_kdbus_receive: ioctl MSG_RECV failed! \n");
-	  return -1;
-  }
+        g_error (" KDBUS_DEBUG: (%s()): ioctl MSG_RECV failed!\n",__FUNCTION__);
+	    return -1;
+      }
 
   msg = (struct kdbus_msg *)((char*)kdbus->priv->buffer_ptr + offset);
-
   ret_size = g_kdbus_decode_msg(kdbus, msg, (char*)data);
 
-  // Release memory occupied by msg
-  again2:
+  //release memory occupied by msg
+  again_2:
 	if (ioctl(kdbus->priv->fd, KDBUS_CMD_MSG_RELEASE, &offset) < 0)
-	{
-		if(errno == EINTR)
-			goto again2;
-    g_print ("g_kdbus_receive: ioctl MSG_RELEASE failed! \n");
+	  {
+        if(errno == EINTR)
+		  goto again_2;
+        g_print (" KDBUS_DEBUG: (%s()): ioctl MSG_RELEASE failed!\n",__FUNCTION__);
 		return -1;
-	}
+	  }
   
   return ret_size;
 }
 
-gchar* g_kdbus_get_sender(GKdbus           *kdbus)
+/*
+ * g_kdbus_get_sender:
+ *
+ */
+gchar* 
+g_kdbus_get_sender (GKdbus    *kdbus)
 {
   return kdbus->priv->sender;
 }
 
 /*
- * TODO add checks for mallocs
+ * g_kdbus_send_reply:
+ * TODO: Handle errors
  */
 static gboolean
-g_kdbus_send_reply(GDBusWorker     *worker, 
-                   GKdbus           *kdbus, 
-                   GDBusMessage    *dbus_msg)
+g_kdbus_send_reply (GDBusWorker     *worker, 
+                    GKdbus          *kdbus, 
+                    GDBusMessage    *dbus_msg)
 {
   GDBusMessage    *reply = NULL;
   char            *unique_name = NULL;
@@ -642,26 +653,32 @@ g_kdbus_send_reply(GDBusWorker     *worker,
   reply = g_dbus_message_new_method_reply(dbus_msg);
   g_dbus_message_set_sender(reply, "org.freedesktop.DBus");
 
-  unique_name = malloc(30); // TODO should allow for Kdbus peer ID max value ?
+  unique_name = malloc(30); //TODO: should allow for Kdbus peer ID max value?
   sprintf(unique_name, "%i", kdbus->priv->peer_id);
 
   sender = malloc (strlen(unique_name) + 4);
-  //if(!sender)
+  if(!sender)
+    {
+      //TODO: Handle error
+      g_error (" KDBUS_DEBUG: (%s()): sender malloc error\n",__FUNCTION__);
+      return -1;
+    }
 			
-	sprintf(sender, ":1.%s", unique_name);
+  sprintf(sender, ":1.%s", unique_name);
   kdbus->priv->sender = sender;
-  g_print ("g_kdbus_send_reply: sender set to:%s! \n", kdbus->priv->sender);
+
+  #ifdef KDBUS_DEBUG
+    g_print ("g_kdbus_send_reply: sender set to:%s! \n", kdbus->priv->sender);
+  #endif
 
   g_dbus_message_set_body(reply, g_variant_new ("(s)", unique_name));
   _g_dbus_worker_queue_or_deliver_received_message (worker, reply);
+  return TRUE;
 }
 
-
-
-/**
+/*
  * g_kdbus_send_message:
- * @kdbus: a #GKdbus
- * TODO handle errors
+ * TODO: Handle errors
  */
 gssize
 g_kdbus_send_message (GDBusWorker     *worker,
@@ -669,95 +686,105 @@ g_kdbus_send_message (GDBusWorker     *worker,
                       GDBusMessage    *dbus_msg,
                       gchar           *blob,
                       gsize           blob_size,
-		                  GError          **error)
+                      GError          **error)
 {
   struct kdbus_msg* kmsg;
   struct kdbus_item *item;
   guint64 kmsg_size = 0;
-  const gchar *dst;
+  const gchar *name;
   guint64 dst_id = KDBUS_DST_ID_BROADCAST;
   
-  
-  // if message to org.Freedesktop.DBus then handle differently
   if(g_strcmp0(g_dbus_message_get_member(dbus_msg), "Hello") == 0)
-  {
-    
-
-    g_print ("kdbus_send_message: sending Hello message! \n");
-  
-    if(!g_kdbus_register(kdbus))
     {
-      g_print ("kdbus_send_message: registering failed! \n");
-      return -1;
+      #ifdef KDBUS_DEBUG    
+        g_print (" KDBUS_DEBUG: (%s()): sending \"Hello\" message!\n",__FUNCTION__);
+      #endif
+
+      if(!g_kdbus_register(kdbus))
+      {
+        #ifdef KDBUS_DEBUG
+          g_print (" KDBUS_DEBUG: (%s()): registering failed!\n",__FUNCTION__);
+        #endif
+        return -1;
+      }
+
+      g_kdbus_send_reply(worker, kdbus, dbus_msg);
+      goto out;
     }
 
-    g_kdbus_send_reply(worker, kdbus, dbus_msg);
-    
-    g_print ("kdbus_send_message: hello sent! \n");
-    
-    goto out;
-  }
+  name = g_dbus_message_get_destination(dbus_msg);
+  if((name[0] == ':') && (name[1] == '1') && (name[2] == '.'))
+    {
+      dst_id = strtoull(&name[3], NULL, 10);
+      name=NULL;
+    }
 
-  g_print ("kdbus_send_message: blob_size: %i \n", (int)blob_size);
-  
-  // get dst name
-  dst = g_dbus_message_get_destination(dbus_msg);
-  g_print ("kdbus_send_message: destination name: %s \n", dst);
+  #ifdef KDBUS_DEBUG
+    g_print (" KDBUS_DEBUG: (%s()): destination name: %s\n",__FUNCTION__,name);
+    g_print (" KDBUS_DEBUG: (%s()): blob size: %d\n",__FUNCTION__,(gint)blob_size);
+  #endif
 
   kmsg_size = sizeof(struct kdbus_msg);
-  kmsg_size += KDBUS_ITEM_SIZE(sizeof(struct kdbus_vec)); // vector for blob
+  kmsg_size += KDBUS_ITEM_SIZE(sizeof(struct kdbus_vec)); //vector for blob
 
-  if (dst)
-  	kmsg_size += KDBUS_ITEM_SIZE(strlen(dst) + 1);
+  if (name)
+  	kmsg_size += KDBUS_ITEM_SIZE(strlen(name) + 1);
   else if (dst_id == KDBUS_DST_ID_BROADCAST)
-  	kmsg_size += KDBUS_PART_HEADER_SIZE + 32; /* TODO transport->bloom_size*/;
+  	kmsg_size += KDBUS_PART_HEADER_SIZE + 32; //transport->bloom_size
 
   kmsg = malloc(kmsg_size);
   if (!kmsg)
-  {
-  	// TODO debug/error
-	  return -1;
-  }
+    {
+      //TODO: Handle error
+      g_error (" KDBUS_DEBUG: (%s()): kmsg malloc error\n",__FUNCTION__);
+      return -1;
+    }
 
   memset(kmsg, 0, kmsg_size);
   kmsg->size = kmsg_size;
   kmsg->payload_type = KDBUS_PAYLOAD_DBUS1;
-  kmsg->dst_id = dst ? 0 : dst_id;
+  kmsg->dst_id = name ? 0 : dst_id;
   kmsg->src_id = kdbus->priv->peer_id;
   kmsg->cookie = g_dbus_message_get_serial(dbus_msg);
-  g_print ("kdbus_send_message: serial: %i \n", kmsg->cookie);
-  g_print ("kdbus_send_message: src_id/peer_id: %i \n", kdbus->priv->peer_id);
 
-  // build message contents
+  #ifdef KDBUS_DEBUG 
+    g_print (" KDBUS_DEBUG: (%s()): serial: %i\n",__FUNCTION__,kmsg->cookie);
+    g_print (" KDBUS_DEBUG: (%s()): src_id/peer_id: %i\n",__FUNCTION__,kdbus->priv->peer_id);
+  #endif
+
+  //build message contents
   item = kmsg->items;
-
   MSG_ITEM_BUILD_VEC(blob, blob_size);
 
-  if (dst)
+  if (name)
 	{
-		item = KDBUS_PART_NEXT(item);
-		item->type = KDBUS_MSG_DST_NAME;
-		item->size = KDBUS_PART_HEADER_SIZE + strlen(dst) + 1;
-		strcpy(item->str, dst);
+	  item = KDBUS_PART_NEXT(item);
+	  item->type = KDBUS_MSG_DST_NAME;
+	  item->size = KDBUS_PART_HEADER_SIZE + strlen(name) + 1;
+	  strcpy(item->str, name);
 	}
-	else if (dst_id == KDBUS_DST_ID_BROADCAST)
+  else if (dst_id == KDBUS_DST_ID_BROADCAST)
 	{
-		item = KDBUS_PART_NEXT(item);
-		item->type = KDBUS_MSG_BLOOM;
-		item->size = KDBUS_PART_HEADER_SIZE + 32; /* TODO transport->bloom_size*/;
-		// TODO (ASK RADEK) strncpy(item->data, dbus_message_get_interface(message), transport->bloom_size);
+	  item = KDBUS_PART_NEXT(item);
+	  item->type = KDBUS_MSG_BLOOM;
+	  item->size = KDBUS_PART_HEADER_SIZE + 32; //TODO: transport->bloom_size*
+	  //TODO: (ASK RADEK) strncpy(item->data,dbus_message_get_interface(message),transport->bloom_size);
 	}
 
 again:
 	if (ioctl(kdbus->priv->fd, KDBUS_CMD_MSG_SEND, kmsg))
-	{
+	  {
 		if(errno == EINTR)
-			goto again;
+		  goto again;
     else
-      g_warning ("g_kdbus_send_message: ioctl error sending kdbus message: %d (%m) \n", errno);
-  }
-  g_print ("kdbus_send_message: ioctl(CMD_MSG_SEND) sent successfully \n");
-  free(kmsg);
+      g_error (" KDBUS_DEBUG: (%s()): ioctl error sending kdbus message:%d (%m)\n",__FUNCTION__,errno);
+    }
+
+    #ifdef KDBUS_DEBUG 
+      g_print (" KDBUS_DEBUG: (%s()): ioctl(CMD_MSG_SEND) sent successfully\n",__FUNCTION__);
+    #endif
+
+    free(kmsg);
 
 out:
   return blob_size;
