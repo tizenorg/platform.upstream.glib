@@ -2590,6 +2590,7 @@ initable_init (GInitable     *initable,
       g_assert_not_reached ();
     }
 
+  /* TODO: [KDBUS] Our kdbus daemon doesn't support connection authentication */
   if (!G_IS_KDBUS_CONNECTION (connection->stream))
     {
       /* Authenticate the connection */

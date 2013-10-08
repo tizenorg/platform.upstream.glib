@@ -85,6 +85,14 @@ G_DEFINE_TYPE_WITH_CODE (GKdbus, g_kdbus, G_TYPE_OBJECT,
 			 G_IMPLEMENT_INTERFACE (G_TYPE_INITABLE,
 						g_kdbus_initable_iface_init));
 
+enum
+{
+  PROP_0,
+  PROP_FD,
+  PROP_TIMEOUT,
+  PROP_PEER_ID
+};
+
 struct _GKdbusPrivate
 {
   gint            fd;
@@ -101,7 +109,7 @@ struct _GKdbusPrivate
 
 /*
  * g_kdbus_get_property:
- * TODO: Compare with gsocket
+ * 
  */
 static void
 g_kdbus_get_property (GObject    *object,
@@ -109,18 +117,30 @@ g_kdbus_get_property (GObject    *object,
 		       GValue     *value,
 		       GParamSpec *pspec)
 {
-  //GKdbus *kdbus = G_KDBUS (object);
+  GKdbus *kdbus = G_KDBUS (object);
 
   switch (prop_id)
     {
+      case PROP_FD:
+        g_value_set_int (value, kdbus->priv->fd);
+        break;
+
+      case PROP_TIMEOUT:
+        g_value_set_int (value, kdbus->priv->timeout);
+        break;
+
+      case PROP_PEER_ID:
+        g_value_set_int (value, kdbus->priv->peer_id);
+        break;
+
       default:
-	G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+	    G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
     }
 }
 
 /*
  * g_kdbus_set_property:
- * TODO: Compare with gsocket
+ * 
  */
 static void
 g_kdbus_set_property (GObject      *object,
@@ -128,12 +148,16 @@ g_kdbus_set_property (GObject      *object,
 		       const GValue *value,
 		       GParamSpec   *pspec)
 {
-  //GKdbus *kdbus = G_KDBUS (object);
+  GKdbus *kdbus = G_KDBUS (object);
 
   switch (prop_id)
     {
+      case PROP_TIMEOUT:
+        kdbus->priv->timeout = g_value_get_int (value);
+        break;
+
       default:
-	G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+	    G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
     }
 }
 
@@ -144,7 +168,13 @@ g_kdbus_set_property (GObject      *object,
 static void
 g_kdbus_finalize (GObject *object)
 {
-  //GKdbus *kdbus = G_KDBUS (object);
+  GKdbus *kdbus = G_KDBUS (object);
+
+  if (kdbus->priv->fd != -1 && !kdbus->priv->closed)
+    g_kdbus_close (kdbus, NULL);
+
+  if (G_OBJECT_CLASS (g_kdbus_parent_class)->finalize)
+    (*G_OBJECT_CLASS (g_kdbus_parent_class)->finalize) (object);
 
 }
 
@@ -162,11 +192,44 @@ g_kdbus_class_init (GKdbusClass *klass)
   gobject_class->finalize = g_kdbus_finalize;
   gobject_class->set_property = g_kdbus_set_property;
   gobject_class->get_property = g_kdbus_get_property;
+/*
+  g_object_class_install_property (gobject_class, PROP_FD,
+                                   g_param_spec_int ("fd",
+                                                     P_("File descriptor"),
+                                                     P_("The kdbus file descriptor"),
+                                                     G_MININT,
+                                                     G_MAXINT,
+                                                    -1,
+                                                     G_PARAM_CONSTRUCT_ONLY |
+                                                     G_PARAM_READABLE |
+                                                     G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class, PROP_TIMEOUT,
+                                   g_param_spec_uint ("timeout",
+                                                      P_("Timeout"),
+                                                      P_("The timeout in seconds on kdbus I/O"),
+                                                      0,
+                                                      G_MAXUINT,
+                                                      0,
+                                                      G_PARAM_READWRITE |
+                                                      G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class, PROP_PEER_ID,
+                                   g_param_spec_uint ("Peer ID",
+                                                      P_("kdbus peer ID"),
+                                                      P_("The kdbus peer ID"),
+                                                      0,
+                                                      G_MAXUINT,
+                                                      0,
+                                                      G_PARAM_READABLE |
+                                                      G_PARAM_STATIC_STRINGS));
+*/
 }
+
 
 /*
  * g_kdbus_initable_iface_init:
- * TODO: Compare with goscket
+ * 
  */
 static void
 g_kdbus_initable_iface_init (GInitableIface *iface)
@@ -176,19 +239,25 @@ g_kdbus_initable_iface_init (GInitableIface *iface)
 
 /*
  * g_kdbus_init:
- * TODO: Compare with gsocket
+ * 
  */
 static void
 g_kdbus_init (GKdbus *kdbus)
 {
   kdbus->priv = G_TYPE_INSTANCE_GET_PRIVATE (kdbus, G_TYPE_KDBUS, GKdbusPrivate);
+
   kdbus->priv->fd = -1;
+  kdbus->priv->peer_id = -1;
+  kdbus->priv->bloom_size = 0;
   kdbus->priv->path = NULL;
   kdbus->priv->buffer_ptr = NULL;
-  kdbus->priv->peer_id = -1;
   kdbus->priv->sender = NULL;
 }
 
+/*
+ * g_kdbus_initable_init:
+ *
+ */
 static gboolean
 g_kdbus_initable_init (GInitable *initable,
 			GCancellable *cancellable,
@@ -216,6 +285,7 @@ g_kdbus_initable_init (GInitable *initable,
  * g_kdbus_get_fd: returns the file descriptor of the kdbus
  *
  */
+
 gint
 g_kdbus_get_fd (GKdbus *kdbus)
 {
@@ -226,28 +296,36 @@ g_kdbus_get_fd (GKdbus *kdbus)
 
 /*
  * g_kdbus_open:
- * TODO: Compare with gsocket, error handlers 
+ * 
  */
 gboolean
 g_kdbus_open (GKdbus         *kdbus,
-	      const gchar    *address,
+    	      const gchar    *address,
               GCancellable   *cancellable,
-	      GError         **error)
+	          GError         **error)
 {
   g_return_val_if_fail (G_IS_KDBUS (kdbus), FALSE);
   kdbus->priv->fd = open(address, O_RDWR|O_CLOEXEC|O_NONBLOCK);
-  
+
+  if (kdbus->priv->fd<0)
+  {
+    g_error(" KDBUS_DEBUG: (%s()): error when mmap: %m, %d",__FUNCTION__,errno);
+    return FALSE;
+  }
+
+  kdbus->priv->closed = FALSE;
   return TRUE;
 }
 
 /*
  * g_kdbus_close:
- * TODO: Compare with gsocket
+ * 
  */
 gboolean
 g_kdbus_close (GKdbus  *kdbus,
-		GError  **error)
+	        	GError  **error)
 {
+  g_return_val_if_fail (G_IS_KDBUS (kdbus), FALSE);
   close(kdbus->priv->fd);
 
   kdbus->priv->closed = TRUE;
@@ -258,7 +336,7 @@ g_kdbus_close (GKdbus  *kdbus,
 
 /*
  * g_kdbus_is_closed: checks whether a kdbus is closed.
- * TODO: Compare with gsocket
+ * 
  */
 gboolean
 g_kdbus_is_closed (GKdbus *kdbus)
@@ -395,7 +473,7 @@ typedef struct {
 
 /*
  * kdbus_source_prepare:
- * TODO: Do We Need This?
+ * 
  */
 static gboolean
 kdbus_source_prepare (GSource *source,
@@ -431,7 +509,7 @@ kdbus_source_prepare (GSource *source,
 
 /*
  * kdbus_source_check:
- * TODO: Do We Need This?
+ * 
  */
 static gboolean
 kdbus_source_check (GSource *source)
@@ -443,7 +521,7 @@ kdbus_source_check (GSource *source)
 
 /*
  * kdbus_source_dispatch
- * TODO: Do We Need This?
+ * 
  */
 static gboolean
 kdbus_source_dispatch  (GSource     *source,
@@ -474,7 +552,7 @@ kdbus_source_dispatch  (GSource     *source,
 
 /*
  * kdbus_source_finalize
- * TODO: Do We Need This?
+ * 
  */
 static void
 kdbus_source_finalize (GSource *source)
@@ -495,7 +573,7 @@ kdbus_source_finalize (GSource *source)
 
 /*
  * kdbus_source_closure_callback:
- * TODO: Do We Need This?
+ * 
  */
 static gboolean
 kdbus_source_closure_callback (GKdbus         *kdbus,

@@ -693,7 +693,7 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
 
   error = NULL;
   if (G_IS_KDBUS_CONNECTION (worker->stream))
-    {
+  {
       bytes_read = _g_kdbus_read_finish (worker->kdbus,
                                          res,
                                          &error);
