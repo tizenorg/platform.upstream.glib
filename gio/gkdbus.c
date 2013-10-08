@@ -87,13 +87,14 @@ G_DEFINE_TYPE_WITH_CODE (GKdbus, g_kdbus, G_TYPE_OBJECT,
 
 struct _GKdbusPrivate
 {
-  gchar          *path;
   gint            fd;
+  gchar          *path;
+  gchar          *buffer_ptr;
+  gchar          *sender;
+  gint            peer_id;
+  guint64         bloom_size;
   guint           closed : 1;
   guint           inited : 1;
-  gchar          *buffer_ptr;
-  gint            peer_id;
-  gchar          *sender;
   guint           timeout;
   guint           timed_out : 1;
 };
@@ -298,13 +299,14 @@ gboolean g_kdbus_register(GKdbus           *kdbus)
     g_print(" KDBUS_DEBUG: (%s()): Our peer ID=%llu\n",__FUNCTION__,hello.id);
   #endif
    
-  //TODO: (ASK RADEK) transportS->bloom_size = hello.bloom_size;
+  kdbus->priv->bloom_size = hello.bloom_size;
   kdbus->priv->buffer_ptr = mmap(NULL, RECEIVE_POOL_SIZE, PROT_READ, MAP_SHARED, kdbus->priv->fd, 0);
+
   if (kdbus->priv->buffer_ptr == MAP_FAILED)
     {
       g_error(" KDBUS_DEBUG: (%s()): error when mmap: %m, %d",__FUNCTION__,errno);
       return FALSE;
-  }
+    }
 
   return TRUE;
 }
@@ -694,7 +696,7 @@ g_kdbus_send_message (GDBusWorker     *worker,
   const gchar *name;
   guint64 dst_id = KDBUS_DST_ID_BROADCAST;
   
-  if(g_strcmp0(g_dbus_message_get_member(dbus_msg), "Hello") == 0)
+  if (g_strcmp0(g_dbus_message_get_member(dbus_msg), "Hello") == 0)
     {
       #ifdef KDBUS_DEBUG    
         g_print (" KDBUS_DEBUG: (%s()): sending \"Hello\" message!\n",__FUNCTION__);
@@ -711,12 +713,15 @@ g_kdbus_send_message (GDBusWorker     *worker,
       g_kdbus_send_reply(worker, kdbus, dbus_msg);
       goto out;
     }
-
-  name = g_dbus_message_get_destination(dbus_msg);
-  if((name[0] == ':') && (name[1] == '1') && (name[2] == '.'))
+  
+  if ((name = g_dbus_message_get_destination(dbus_msg)))
     {
-      dst_id = strtoull(&name[3], NULL, 10);
-      name=NULL;
+      dst_id = KDBUS_DST_ID_WELL_KNOWN_NAME;
+      if ((name[0] == ':') && (name[1] == '1') && (name[2] == '.'))
+        {
+          dst_id = strtoull(&name[3], NULL, 10);
+          name=NULL;
+        }
     }
 
   #ifdef KDBUS_DEBUG
@@ -730,7 +735,7 @@ g_kdbus_send_message (GDBusWorker     *worker,
   if (name)
   	kmsg_size += KDBUS_ITEM_SIZE(strlen(name) + 1);
   else if (dst_id == KDBUS_DST_ID_BROADCAST)
-  	kmsg_size += KDBUS_PART_HEADER_SIZE + 32; //transport->bloom_size
+  	kmsg_size += KDBUS_PART_HEADER_SIZE + kdbus->priv->bloom_size;
 
   kmsg = malloc(kmsg_size);
   if (!kmsg)
@@ -767,8 +772,8 @@ g_kdbus_send_message (GDBusWorker     *worker,
 	{
 	  item = KDBUS_PART_NEXT(item);
 	  item->type = KDBUS_MSG_BLOOM;
-	  item->size = KDBUS_PART_HEADER_SIZE + 32; //TODO: transport->bloom_size*
-	  //TODO: (ASK RADEK) strncpy(item->data,dbus_message_get_interface(message),transport->bloom_size);
+	  item->size = KDBUS_PART_HEADER_SIZE + kdbus->priv->bloom_size;
+	  strncpy(item->data,g_dbus_message_get_interface(dbus_msg),kdbus->priv->bloom_size);
 	}
 
 again:
