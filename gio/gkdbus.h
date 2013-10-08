@@ -101,8 +101,6 @@ gssize                  g_kdbus_send_message            (GDBusWorker     *worker
 GLIB_AVAILABLE_IN_ALL
 gboolean                g_kdbus_register                (GKdbus           *kdbus);
 GLIB_AVAILABLE_IN_ALL
-gchar*                  g_kdbus_get_sender                (GKdbus           *kdbus);
-GLIB_AVAILABLE_IN_ALL
 GSource *              g_kdbus_create_source           (GKdbus                 *kdbus,
 							                                           GIOCondition             condition,
 							                                           GCancellable            *cancellable);

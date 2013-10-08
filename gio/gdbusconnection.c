@@ -1649,9 +1649,11 @@ g_dbus_connection_send_message_unlocked (GDBusConnection   *connection,
     goto out;
 
   if (G_IS_KDBUS_CONNECTION (connection->stream)){
-    if(g_kdbus_get_sender(g_kdbus_connection_get_kdbus (G_KDBUS_CONNECTION (connection->stream))) != NULL) 
+    if ((connection->bus_unique_name) != NULL) 
       {
-        g_dbus_message_set_sender(message, g_kdbus_get_sender(g_kdbus_connection_get_kdbus (G_KDBUS_CONNECTION (connection->stream))));
+        //g_print ("SENDER: %s\n", g_kdbus_get_sender(g_kdbus_connection_get_kdbus(G_KDBUS_CONNECTION (connection->stream))));
+        //g_print ("SENDER CONNECTION: %s\n",g_dbus_connection_get_unique_name(connection));
+        g_dbus_message_set_sender(message, connection->bus_unique_name);
         #ifdef KDBUS_DEBUG 
           g_print (" KDBUS_DEBUG: (%s()): set_sender ok!\n",__FUNCTION__);
         #endif

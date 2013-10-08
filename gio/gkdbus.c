@@ -708,18 +708,8 @@ g_kdbus_receive (GKdbus       *kdbus,
 }
 
 /*
- * g_kdbus_get_sender:
- *
- */
-gchar* 
-g_kdbus_get_sender (GKdbus    *kdbus)
-{
-  return kdbus->priv->sender;
-}
-
-/*
  * g_kdbus_send_reply:
- * TODO: Handle errors
+ * TODO: Handle errors,remove unused variables
  */
 static gboolean
 g_kdbus_send_reply (GDBusWorker     *worker, 
@@ -751,7 +741,8 @@ g_kdbus_send_reply (GDBusWorker     *worker,
     g_print ("g_kdbus_send_reply: sender set to:%s! \n", kdbus->priv->sender);
   #endif
 
-  g_dbus_message_set_body(reply, g_variant_new ("(s)", unique_name));
+  //g_dbus_message_set_body(reply, g_variant_new ("(s)", unique_name));
+  g_dbus_message_set_body (reply, g_variant_new ("(s)",sender));
   _g_dbus_worker_queue_or_deliver_received_message (worker, reply);
   return TRUE;
 }
