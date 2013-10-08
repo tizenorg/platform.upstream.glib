@@ -73,18 +73,18 @@ GType              g_kdbus_connection_get_type                  (void) G_GNUC_CO
 GLIB_AVAILABLE_IN_ALL
 GKdbusConnection   *g_kdbus_connection_new                      (void);
 GLIB_AVAILABLE_IN_ALL
-gboolean           g_kdbus_connection_is_connected              (GKdbusConnection  *connection);
+gboolean           g_kdbus_connection_is_connected              (GKdbusConnection	*connection);
 GLIB_AVAILABLE_IN_ALL
-gboolean           g_kdbus_connection_connect                   (GKdbusConnection  *connection,
-                                								 const gchar       *address,
-								                                 GCancellable      *cancellable,
-								                                 GError           **error);
+gboolean           g_kdbus_connection_connect                   (GKdbusConnection	*connection,
+								const gchar		*address,
+								GCancellable		*cancellable,
+								GError			**error);
 GLIB_AVAILABLE_IN_ALL
-gboolean           g_kdbus_connection_close			            (GIOStream         *stream,
-			   					                                 GCancellable      *cancellable,
-			   					                                 GError           **error);
+gboolean           g_kdbus_connection_close			(GIOStream         	*stream,
+								GCancellable      	*cancellable,
+								GError           	**error);
 GLIB_AVAILABLE_IN_ALL
-GKdbus            *g_kdbus_connection_get_kdbus                 (GKdbusConnection  *connection);
+GKdbus            *g_kdbus_connection_get_kdbus                 (GKdbusConnection  	*connection);
 
 G_END_DECLS
 

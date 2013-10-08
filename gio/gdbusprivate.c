@@ -134,7 +134,7 @@ typedef struct
 static void
 read_kdbus_data_free (ReadKdbusData *data)
 {
-  //g_object_unref (data->kdbus); TODO
+  g_object_unref (data->kdbus);
   if (data->cancellable != NULL)
     g_object_unref (data->cancellable);
   g_object_unref (data->simple);
@@ -235,7 +235,7 @@ _g_kdbus_read (GKdbus                  *kdbus,
   GSource *source;
 
   data = g_new0 (ReadKdbusData, 1);
-  data->kdbus = kdbus; /*g_object_ref (socket);*/
+  data->kdbus = g_object_ref (kdbus);
   data->cancellable = cancellable != NULL ? g_object_ref (cancellable) : NULL;
   data->buffer = buffer;
   data->count = count;
