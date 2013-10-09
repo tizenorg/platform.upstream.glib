@@ -101,6 +101,7 @@ struct _GKdbusPrivate
   gchar          *sender;
   gint            peer_id;
   guint64         bloom_size;
+  guint           registered : 1;
   guint           closed : 1;
   guint           inited : 1;
   guint           timeout;
@@ -330,6 +331,7 @@ g_kdbus_close (GKdbus  *kdbus,
 
   kdbus->priv->closed = TRUE;
   kdbus->priv->fd = -1;
+  kdbus->priv->registered = FALSE;
   
   return TRUE;
 }
@@ -371,6 +373,7 @@ gboolean g_kdbus_register(GKdbus           *kdbus)
       return FALSE;
     }
 
+  kdbus->priv->registered = TRUE;
   kdbus->priv->peer_id = hello.id;
 
   #ifdef KDBUS_DEBUG
@@ -764,25 +767,26 @@ g_kdbus_send_message (GDBusWorker     *worker,
   guint64 kmsg_size = 0;
   const gchar *name;
   guint64 dst_id = KDBUS_DST_ID_BROADCAST;
-  
-  if (g_strcmp0(g_dbus_message_get_member(dbus_msg), "Hello") == 0)
+
+  if (kdbus->priv->registered == FALSE)
     {
-      #ifdef KDBUS_DEBUG    
-        g_print (" KDBUS_DEBUG: (%s()): sending \"Hello\" message!\n",__FUNCTION__);
-      #endif
+      if (!g_kdbus_register(kdbus))
+        {
+          g_error (" KDBUS_DEBUG: (%s()): registering failed!\n",__FUNCTION__);
+          return -1;
+        }
 
-      if(!g_kdbus_register(kdbus))
-      {
-        #ifdef KDBUS_DEBUG
-          g_print (" KDBUS_DEBUG: (%s()): registering failed!\n",__FUNCTION__);
-        #endif
-        return -1;
-      }
+      if (g_strcmp0(g_dbus_message_get_member(dbus_msg), "Hello") == 0)
+        {
+          #ifdef KDBUS_DEBUG    
+            g_print (" KDBUS_DEBUG: (%s()): sending \"Hello\" message!\n",__FUNCTION__);
+          #endif
 
-      g_kdbus_send_reply(worker, kdbus, dbus_msg);
-      goto out;
+          g_kdbus_send_reply(worker, kdbus, dbus_msg);
+          goto out;
+        }
     }
-  
+
   if ((name = g_dbus_message_get_destination(dbus_msg)))
     {
       dst_id = KDBUS_DST_ID_WELL_KNOWN_NAME;
@@ -792,11 +796,6 @@ g_kdbus_send_message (GDBusWorker     *worker,
           name=NULL;
         }
     }
-
-  #ifdef KDBUS_DEBUG
-    g_print (" KDBUS_DEBUG: (%s()): destination name: %s\n",__FUNCTION__,name);
-    g_print (" KDBUS_DEBUG: (%s()): blob size: %d\n",__FUNCTION__,(gint)blob_size);
-  #endif
 
   kmsg_size = sizeof(struct kdbus_msg);
   kmsg_size += KDBUS_ITEM_SIZE(sizeof(struct kdbus_vec)); //vector for blob
@@ -821,7 +820,9 @@ g_kdbus_send_message (GDBusWorker     *worker,
   kmsg->src_id = kdbus->priv->peer_id;
   kmsg->cookie = g_dbus_message_get_serial(dbus_msg);
 
-  #ifdef KDBUS_DEBUG 
+  #ifdef KDBUS_DEBUG
+    g_print (" KDBUS_DEBUG: (%s()): destination name: %s\n",__FUNCTION__,name);
+    g_print (" KDBUS_DEBUG: (%s()): blob size: %d\n",__FUNCTION__,(gint)blob_size);
     g_print (" KDBUS_DEBUG: (%s()): serial: %i\n",__FUNCTION__,kmsg->cookie);
     g_print (" KDBUS_DEBUG: (%s()): src_id/peer_id: %i\n",__FUNCTION__,kdbus->priv->peer_id);
   #endif
