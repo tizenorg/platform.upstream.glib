@@ -836,7 +836,7 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
 
   worker->read_buffer_cur_size += bytes_read;
 
-  /* TODO: [KDBUS] Sprawdzic pole read_buffer_bytes_wanted */
+  /* For KDBUS transport we don't have to read message header */
   if (G_IS_KDBUS_CONNECTION (worker->stream))
     worker->read_buffer_bytes_wanted = worker->read_buffer_cur_size;
 
@@ -959,9 +959,18 @@ _g_dbus_worker_do_read_unlocked (GDBusWorker *worker)
   /* ensure we have a (big enough) buffer */
   if (worker->read_buffer == NULL || worker->read_buffer_bytes_wanted > worker->read_buffer_allocated_size)
     {
-      /* TODO: 4096 is randomly chosen; might want a better chosen default minimum */
-      worker->read_buffer_allocated_size = MAX (worker->read_buffer_bytes_wanted, 4096);
-      worker->read_buffer = g_realloc (worker->read_buffer, worker->read_buffer_allocated_size);
+      if (G_IS_KDBUS_CONNECTION (worker->stream))
+        {
+          /* For KDBUS transport we have to alloc buffer only once - DBUS_MAXIMUM_MESSAGE_LENGTH=2^27 */
+          worker->read_buffer_allocated_size = MAX (worker->read_buffer_bytes_wanted, 134217728);
+          worker->read_buffer = g_realloc (worker->read_buffer, worker->read_buffer_allocated_size);
+        }
+      else
+        {
+          /* TODO: 4096 is randomly chosen; might want a better chosen default minimum */
+          worker->read_buffer_allocated_size = MAX (worker->read_buffer_bytes_wanted, 4096);
+          worker->read_buffer = g_realloc (worker->read_buffer, worker->read_buffer_allocated_size);
+        }
     }
 
   if (G_IS_KDBUS_CONNECTION (worker->stream))
