@@ -1600,9 +1600,12 @@ continue_writing (GDBusWorker *worker)
       worker->close_expected = TRUE;
       worker->output_pending = PENDING_CLOSE;
 
-      g_io_stream_close_async (worker->stream, G_PRIORITY_DEFAULT,
-                               NULL, iostream_close_cb,
-                               _g_dbus_worker_ref (worker));
+      if (G_IS_KDBUS_CONNECTION (worker->stream))
+          g_kdbus_connection_close (worker->stream, NULL, NULL);
+      else
+          g_io_stream_close_async (worker->stream, G_PRIORITY_DEFAULT,
+                                   NULL, iostream_close_cb,
+                                   _g_dbus_worker_ref (worker));
     }
   else
     {

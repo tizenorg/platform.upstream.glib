@@ -314,6 +314,10 @@ g_kdbus_open (GKdbus         *kdbus,
     return FALSE;
   }
 
+  #ifdef KDBUS_DEBUG
+    g_print (" KDBUS_DEBUG: (%s()): kdbus endpoint opened\n",__FUNCTION__);
+  #endif
+
   kdbus->priv->closed = FALSE;
   return TRUE;
 }
@@ -328,10 +332,14 @@ g_kdbus_close (GKdbus  *kdbus,
 {
   g_return_val_if_fail (G_IS_KDBUS (kdbus), FALSE);
   close(kdbus->priv->fd);
-
+ 
   kdbus->priv->closed = TRUE;
   kdbus->priv->fd = -1;
   kdbus->priv->registered = FALSE;
+
+  #ifdef KDBUS_DEBUG
+    g_print (" KDBUS_DEBUG: (%s()): kdbus endpoint closed\n",__FUNCTION__);
+  #endif
   
   return TRUE;
 }
@@ -684,14 +692,23 @@ g_kdbus_receive (GKdbus       *kdbus,
   guint64 __attribute__ ((__aligned__(8))) offset;
   struct kdbus_msg *msg;
 
+  /* TODO: Temporary hack */
+  if (kdbus->priv->closed == TRUE)
+    return 1;
+
   //get memory offset of msg
   again:
     if (ioctl(kdbus->priv->fd, KDBUS_CMD_MSG_RECV, &offset) < 0)
       {
 	    if(errno == EINTR)
 		  goto again;
-        g_error (" KDBUS_DEBUG: (%s()): ioctl MSG_RECV failed!\n",__FUNCTION__);
-	    return -1;
+
+        /* TODO: Temporary hack */
+        if (errno == EAGAIN)
+          return 1;
+
+        g_error (" KDBUS_DEBUG: (%s()): ioctl MSG_RECV failed! %d (%m)\n",__FUNCTION__,errno);
+	    return 1;
       }
 
   msg = (struct kdbus_msg *)((char*)kdbus->priv->buffer_ptr + offset);
