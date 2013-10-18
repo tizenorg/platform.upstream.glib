@@ -764,6 +764,9 @@ g_kdbus_send_reply (GDBusWorker     *worker,
   //g_dbus_message_set_body(reply, g_variant_new ("(s)", unique_name));
   g_dbus_message_set_body (reply, g_variant_new ("(s)",sender));
   _g_dbus_worker_queue_or_deliver_received_message (worker, reply);
+
+  g_free (unique_name);
+  g_free (sender);
   return TRUE;
 }
 
