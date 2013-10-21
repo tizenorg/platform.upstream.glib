@@ -702,12 +702,16 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
     goto out;
 
   error = NULL;
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
   if (G_IS_KDBUS_CONNECTION (worker->stream))
   {
       bytes_read = _g_kdbus_read_finish (worker->kdbus,
                                          res,
                                          &error);
   } else if (worker->socket == NULL)
+#else
+  if (worker->socket == NULL)
+#endif
     bytes_read = g_input_stream_read_finish (g_io_stream_get_input_stream (worker->stream),
                                              res,
                                              &error);
@@ -988,7 +992,7 @@ _g_dbus_worker_do_read_unlocked (GDBusWorker *worker)
         }
 #endif
     }
-
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
   if (G_IS_KDBUS_CONNECTION (worker->stream))
     {
       _g_kdbus_read(worker->kdbus, 
@@ -1000,6 +1004,9 @@ _g_dbus_worker_do_read_unlocked (GDBusWorker *worker)
       
 
   } else if (worker->socket == NULL)
+#else
+  if (worker->socket == NULL)
+#endif
     g_input_stream_read_async (g_io_stream_get_input_stream (worker->stream),
                                worker->read_buffer + worker->read_buffer_cur_size,
                                worker->read_buffer_bytes_wanted - worker->read_buffer_cur_size,
@@ -1137,7 +1144,9 @@ on_socket_ready (GSocket      *socket,
 static void
 write_message_continue_writing (MessageToWriteData *data)
 {
+  GOutputStream *ostream;
 #ifdef G_OS_UNIX
+  GUnixFDList *fd_list;
   GSimpleAsyncResult *simple;
   simple = data->simple;
 #endif
@@ -1157,11 +1166,6 @@ write_message_continue_writing (MessageToWriteData *data)
   else
     {
 #endif
-      GOutputStream *ostream;
-#ifdef G_OS_UNIX
-      GUnixFDList *fd_list;
-#endif
-
       ostream = g_io_stream_get_output_stream (data->worker->stream);
 #ifdef G_OS_UNIX
       fd_list = g_dbus_message_get_unix_fd_list (data->message);
