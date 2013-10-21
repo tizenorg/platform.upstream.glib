@@ -115,7 +115,6 @@
 #include "gdbusaddress.h"
 #include "gdbusmessage.h"
 #include "gdbusconnection.h"
-#include "gkdbusconnection.h"
 #include "gdbuserror.h"
 #include "gioenumtypes.h"
 #include "gdbusintrospection.h"
@@ -129,6 +128,9 @@
 #include "gsimpleasyncresult.h"
 
 #ifdef G_OS_UNIX
+#ifdef KDBUS_TRANSPORT
+#include "gkdbusconnection.h"
+#endif
 #include "gunixconnection.h"
 #include "gunixfdmessage.h"
 #endif
@@ -1648,15 +1650,17 @@ g_dbus_connection_send_message_unlocked (GDBusConnection   *connection,
                        error))
     goto out;
 
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
   if (G_IS_KDBUS_CONNECTION (connection->stream)){
     if ((connection->bus_unique_name) != NULL) 
       {
         g_dbus_message_set_sender(message, connection->bus_unique_name);
-        #ifdef KDBUS_DEBUG 
-          g_print (" KDBUS_DEBUG: (%s()): set_sender ok!\n",__FUNCTION__);
+        #ifdef KDBUS_TRANSPORT_DEBUG 
+          g_print (" KDBUS_TRANSPORT_DEBUG: (%s()): set_sender ok!\n",__FUNCTION__);
         #endif
       }
   }
+#endif
 
   blob = g_dbus_message_to_blob (message,
                                  &blob_size,
@@ -2589,10 +2593,11 @@ initable_init (GInitable     *initable,
     {
       g_assert_not_reached ();
     }
-
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
   /* TODO: [KDBUS] Our kdbus daemon doesn't support connection authentication */
   if (!G_IS_KDBUS_CONNECTION (connection->stream))
     {
+#endif
       /* Authenticate the connection */
       if (connection->flags & G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_SERVER)
         {
@@ -2630,7 +2635,9 @@ initable_init (GInitable     *initable,
           g_object_unref (connection->authentication_observer);
           connection->authentication_observer = NULL;
         }
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
   }
+#endif
   //g_output_stream_flush (G_SOCKET_CONNECTION (connection->stream)
 
   //g_debug ("haz unix fd passing powers: %d", connection->capabilities & G_DBUS_CAPABILITY_FLAGS_UNIX_FD_PASSING);

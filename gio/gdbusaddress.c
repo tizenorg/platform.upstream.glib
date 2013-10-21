@@ -44,7 +44,9 @@
 
 #ifdef G_OS_UNIX
 #include <gio/gunixsocketaddress.h>
+#ifdef KDBUS_TRANSPORT
 #include <gio/gkdbusconnection.h>
+#endif
 #endif
 
 #ifdef G_OS_WIN32
@@ -402,7 +404,11 @@ g_dbus_is_supported_address (const gchar  *string,
         goto out;
 
       supported = FALSE;
-      if ((g_strcmp0 (transport_name, "unix") == 0) || (g_strcmp0 (transport_name, "kdbus") == 0))
+      if ((g_strcmp0 (transport_name, "unix") == 0) 
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT) 
+      || (g_strcmp0 (transport_name, "kdbus") == 0)
+#endif
+      )
         supported = is_valid_unix (a[n], key_value_pairs, error);
       else if (g_strcmp0 (transport_name, "tcp") == 0)
         supported = is_valid_tcp (a[n], key_value_pairs, error);
@@ -554,7 +560,11 @@ g_dbus_address_connect (const gchar   *address_entry,
     {
     }
 #ifdef G_OS_UNIX
-  else if ((g_strcmp0 (transport_name, "unix") == 0) || (g_strcmp0 (transport_name, "kdbus") == 0))
+  else if ((g_strcmp0 (transport_name, "unix") == 0)
+#ifdef KDBUS_TRANSPORT
+          || (g_strcmp0 (transport_name, "kdbus") == 0)
+#endif
+          )
     {
       const gchar *path;
       const gchar *abstract;
@@ -665,7 +675,7 @@ g_dbus_address_connect (const gchar   *address_entry,
 
   if (connectable != NULL)
     {
-
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
       if (g_strcmp0 (transport_name, "kdbus") == 0)
         {
           GKdbusConnection *connection;
@@ -687,6 +697,7 @@ g_dbus_address_connect (const gchar   *address_entry,
         }
       else
         {
+#endif
           GSocketClient *client;
           GSocketConnection *connection;
 
@@ -702,7 +713,9 @@ g_dbus_address_connect (const gchar   *address_entry,
             goto out;
 
           ret = G_IO_STREAM (connection);
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
         }
+#endif
 
       if (nonce_file != NULL)
         {

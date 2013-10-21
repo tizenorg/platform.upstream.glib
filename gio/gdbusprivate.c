@@ -45,9 +45,11 @@
 #include "gsocketoutputstream.h"
 
 #ifdef G_OS_UNIX
+#ifdef KDBUS_TRANSPORT
+#include "gkdbusconnection.h"
+#endif
 #include "gunixfdmessage.h"
 #include "gunixconnection.h"
-#include "gkdbusconnection.h"
 #include "gunixcredentialsmessage.h"
 #endif
 
@@ -118,6 +120,7 @@ typedef struct
   gboolean from_mainloop;
 } ReadWithControlData;
 
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
 typedef struct
 {
   GKdbus *kdbus;
@@ -135,16 +138,6 @@ static void
 read_kdbus_data_free (ReadKdbusData *data)
 {
   g_object_unref (data->kdbus);
-  if (data->cancellable != NULL)
-    g_object_unref (data->cancellable);
-  g_object_unref (data->simple);
-  g_free (data);
-}
-
-static void
-read_with_control_data_free (ReadWithControlData *data)
-{
-  g_object_unref (data->socket);
   if (data->cancellable != NULL)
     g_object_unref (data->cancellable);
   g_object_unref (data->simple);
@@ -181,6 +174,17 @@ _g_kdbus_read_ready (GKdbus      *kdbus,
     g_simple_async_result_complete_in_idle (data->simple);
 
   return FALSE;
+}
+#endif
+
+static void
+read_with_control_data_free (ReadWithControlData *data)
+{
+  g_object_unref (data->socket);
+  if (data->cancellable != NULL)
+    g_object_unref (data->cancellable);
+  g_object_unref (data->simple);
+  g_free (data);
 }
 
 static gboolean
@@ -223,6 +227,7 @@ _g_socket_read_with_control_messages_ready (GSocket      *socket,
   return FALSE;
 }
 
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
 static void
 _g_kdbus_read (GKdbus                  *kdbus,
                void                    *buffer,
@@ -257,6 +262,7 @@ _g_kdbus_read (GKdbus                  *kdbus,
   g_source_attach (source, g_main_context_get_thread_default ());
   g_source_unref (source);
 }
+#endif
 
 static void
 _g_socket_read_with_control_messages (GSocket                 *socket,
@@ -306,6 +312,7 @@ _g_socket_read_with_control_messages (GSocket                 *socket,
     }
 }
 
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
 static gssize
 _g_kdbus_read_finish (GKdbus       *kdbus,
                                              GAsyncResult  *result,
@@ -321,6 +328,7 @@ _g_kdbus_read_finish (GKdbus       *kdbus,
   else
     return g_simple_async_result_get_op_res_gssize (simple);
 }
+#endif
 
 static gssize
 _g_socket_read_with_control_messages_finish (GSocket       *socket,
@@ -473,7 +481,9 @@ struct GDBusWorker
 
   /* if GSocket and GKdbus are NULL, stream is GSocketConnection */
   GSocket *socket;
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
   GKdbus  *kdbus;
+#endif
 
   /* used for reading */
   GMutex                              read_lock;
@@ -836,9 +846,11 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
 
   worker->read_buffer_cur_size += bytes_read;
 
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
   /* For KDBUS transport we don't have to read message header */
   if (G_IS_KDBUS_CONNECTION (worker->stream))
     worker->read_buffer_bytes_wanted = worker->read_buffer_cur_size;
+#endif
 
   if (worker->read_buffer_bytes_wanted == worker->read_buffer_cur_size)
     {
@@ -959,6 +971,7 @@ _g_dbus_worker_do_read_unlocked (GDBusWorker *worker)
   /* ensure we have a (big enough) buffer */
   if (worker->read_buffer == NULL || worker->read_buffer_bytes_wanted > worker->read_buffer_allocated_size)
     {
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
       if (G_IS_KDBUS_CONNECTION (worker->stream))
         {
           /* For KDBUS transport we have to alloc buffer only once - DBUS_MAXIMUM_MESSAGE_LENGTH=2^27 */
@@ -967,10 +980,13 @@ _g_dbus_worker_do_read_unlocked (GDBusWorker *worker)
         }
       else
         {
+#endif
           /* TODO: 4096 is randomly chosen; might want a better chosen default minimum */
           worker->read_buffer_allocated_size = MAX (worker->read_buffer_bytes_wanted, 4096);
           worker->read_buffer = g_realloc (worker->read_buffer, worker->read_buffer_allocated_size);
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
         }
+#endif
     }
 
   if (G_IS_KDBUS_CONNECTION (worker->stream))
@@ -1126,6 +1142,7 @@ write_message_continue_writing (MessageToWriteData *data)
   simple = data->simple;
 #endif
 
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
   if (G_IS_KDBUS_CONNECTION (data->worker->stream))
     {
       GError *error;
@@ -1139,6 +1156,7 @@ write_message_continue_writing (MessageToWriteData *data)
     }
   else
     {
+#endif
       GOutputStream *ostream;
 #ifdef G_OS_UNIX
       GUnixFDList *fd_list;
@@ -1258,7 +1276,10 @@ write_message_continue_writing (MessageToWriteData *data)
                                         write_message_async_cb,
                                         data);
          }
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
     }
+#endif
+
 #ifdef G_OS_UNIX
  out:
 #endif
@@ -1600,9 +1621,11 @@ continue_writing (GDBusWorker *worker)
       worker->close_expected = TRUE;
       worker->output_pending = PENDING_CLOSE;
 
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
       if (G_IS_KDBUS_CONNECTION (worker->stream))
           g_kdbus_connection_close (worker->stream, NULL, NULL);
       else
+#endif
           g_io_stream_close_async (worker->stream, G_PRIORITY_DEFAULT,
                                    NULL, iostream_close_cb,
                                    _g_dbus_worker_ref (worker));
@@ -1828,8 +1851,10 @@ _g_dbus_worker_new (GIOStream                              *stream,
   if (G_IS_SOCKET_CONNECTION (worker->stream))
     worker->socket = g_socket_connection_get_socket (G_SOCKET_CONNECTION (worker->stream));
 
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
   if (G_IS_KDBUS_CONNECTION (worker->stream))
     worker->kdbus = g_kdbus_connection_get_kdbus (G_KDBUS_CONNECTION (worker->stream));
+#endif
 
   worker->shared_thread_data = _g_dbus_shared_thread_ref ();
 
