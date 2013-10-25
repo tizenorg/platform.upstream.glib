@@ -250,6 +250,32 @@ typedef struct _GVolume                       GVolume; /* Dummy typedef */
 typedef struct _GVolumeMonitor                GVolumeMonitor;
 
 /**
+ * GKdbus:
+ *
+ * A lowlevel kdbus object.
+ *
+ **/
+
+typedef struct _GKdbus                  GKdbus;
+
+/**
+ * GKdbusClient:
+ *
+ * A helper class for kdbus clients to make connections.
+ *
+ **/
+
+typedef struct _GKdbusClient                  GKdbusClient;
+
+/**
+ * GKdbusConnection:
+ *
+ * A kdbus connection GIOStream object.
+ *
+ **/
+typedef struct _GKdbusConnection              GKdbusConnection;
+
+/**
  * GAsyncReadyCallback:
  * @source_object: the object the asynchronous operation was started with.
  * @res: a #GAsyncResult.

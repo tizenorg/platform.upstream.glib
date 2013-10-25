@@ -34,6 +34,7 @@
 #include "gioenumtypes.h"
 #include "gnetworkaddress.h"
 #include "gsocketclient.h"
+#include "gkdbusclient.h"
 #include "giostream.h"
 #include "gasyncresult.h"
 #include "gsimpleasyncresult.h"
@@ -687,37 +688,45 @@ g_dbus_address_connect (const gchar   *address_entry,
   if (connectable != NULL)
     {
 
-      GSocketClient *client;
-      GSocketConnection *connection;
-
-      g_assert (ret == NULL);
-      client = g_socket_client_new ();
-      connection = g_socket_client_connect (client,
-                                            connectable,
-                                            cancellable,
-                                            error);
-      g_object_unref (connectable);
-      g_object_unref (client);
-      if (connection == NULL)
-        goto out;
-
-      //TODO
-      /*
       if (g_strcmp0 (transport_name, "kdbus") == 0)
         {
           GKdbusClient *client;
           GKdbusConnection *connection;
+
+          const gchar *path;
+          path = g_hash_table_lookup (key_value_pairs, "path");
           
           g_assert (ret == NULL);
           client = g_kdbus_client_new ();
           connection = g_kdbus_client_connect (client,
-                                               connectable,
+                                               path,
                                                cancellable,
                                                error);
-        }
-      */
+          g_object_unref (connectable);
+          g_object_unref (client);
+          if (connection == NULL)
+            goto out;
 
-      ret = G_IO_STREAM (connection);
+          ret = G_IO_STREAM (connection);
+        }
+      else
+        {
+          GSocketClient *client;
+          GSocketConnection *connection;
+
+          g_assert (ret == NULL);
+          client = g_socket_client_new ();
+          connection = g_socket_client_connect (client,
+                                                connectable,
+                                                cancellable,
+                                                error);
+          g_object_unref (connectable);
+          g_object_unref (client);
+          if (connection == NULL)
+            goto out;
+
+          ret = G_IO_STREAM (connection);
+        }
 
       if (nonce_file != NULL)
         {
