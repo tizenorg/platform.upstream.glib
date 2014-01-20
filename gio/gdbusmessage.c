@@ -75,6 +75,7 @@ g_memory_buffer_read_byte (GMemoryBuffer  *mbuf,
   return mbuf->data [mbuf->pos++];
 }
 
+#ifndef KDBUS_TRANSPORT
 static gint16
 g_memory_buffer_read_int16 (GMemoryBuffer  *mbuf,
 			    GError            **error)
@@ -161,6 +162,7 @@ g_memory_buffer_read_int32 (GMemoryBuffer  *mbuf,
     }
   return v;
 }
+#endif /* KDBUS_TRANSPORT */
 
 static guint32
 g_memory_buffer_read_uint32 (GMemoryBuffer  *mbuf,
@@ -191,6 +193,7 @@ g_memory_buffer_read_uint32 (GMemoryBuffer  *mbuf,
   return v;
 }
 
+#ifndef KDBUS_TRANSPORT
 static gint64
 g_memory_buffer_read_int64 (GMemoryBuffer  *mbuf,
 			    GError            **error)
@@ -248,6 +251,7 @@ g_memory_buffer_read_uint64 (GMemoryBuffer  *mbuf,
 	}
       return v;
 }
+#endif /* KDBUS_TRANSPORT */
 
 #define MIN_ARRAY_SIZE  128
 
@@ -337,6 +341,7 @@ g_memory_buffer_put_byte (GMemoryBuffer  *mbuf,
   return g_memory_buffer_write (mbuf, &data, 1);
 }
 
+#ifndef KDBUS_TRANSPORT
 static gboolean
 g_memory_buffer_put_int16 (GMemoryBuffer  *mbuf,
 			   gint16          data)
@@ -396,6 +401,7 @@ g_memory_buffer_put_int32 (GMemoryBuffer  *mbuf,
   
   return g_memory_buffer_write (mbuf, &data, 4);
 }
+#endif /* KDBUS_TRANSPORT */
 
 static gboolean
 g_memory_buffer_put_uint32 (GMemoryBuffer  *mbuf,
@@ -417,6 +423,7 @@ g_memory_buffer_put_uint32 (GMemoryBuffer  *mbuf,
   return g_memory_buffer_write (mbuf, &data, 4);
 }
 
+#ifndef KDBUS_TRANSPORT
 static gboolean
 g_memory_buffer_put_int64 (GMemoryBuffer  *mbuf,
 			   gint64          data)
@@ -465,6 +472,7 @@ g_memory_buffer_put_string (GMemoryBuffer  *mbuf,
 
   return g_memory_buffer_write (mbuf, str, strlen (str));
 }
+#endif /* KDBUS_TRANSPORT */
 
 
 /**
@@ -1349,9 +1357,8 @@ validate_headers (GDBusMessage  *message,
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
-
 static gboolean
-ensure_input_padding (GMemoryBuffer         *buf,
+ensure_input_padding (GMemoryBuffer        *buf,
                       gsize                 padding_size,
                       GError              **error)
 {
@@ -1364,6 +1371,7 @@ ensure_input_padding (GMemoryBuffer         *buf,
   return TRUE;
 }
 
+#ifndef KDBUS_TRANSPORT
 static const gchar *
 read_string (GMemoryBuffer          *mbuf,
              gsize                  len,
@@ -1425,10 +1433,12 @@ read_string (GMemoryBuffer          *mbuf,
 
   return str;
 }
+#endif /* KDBUS_TRANSPORT */
 
 /* if just_align==TRUE, don't read a value, just align the input stream wrt padding */
 
 /* returns a non-floating GVariant! */
+#ifndef KDBUS_TRANSPORT
 static GVariant *
 parse_value_from_blob (GMemoryBuffer          *buf,
                        const GVariantType    *type,
@@ -1924,6 +1934,7 @@ parse_value_from_blob (GMemoryBuffer          *buf,
   g_propagate_error (error, local_error);
   return NULL;
 }
+#endif /* KDBUS_TRANSPORT */
 
 /* ---------------------------------------------------------------------------------------------------- */
 
@@ -2030,6 +2041,10 @@ g_dbus_message_new_from_blob (guchar                *blob,
   GVariantIter iter;
   GVariant *signature;
 
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+  guint32 message_headers_len;
+#endif /* KDBUS_TRANSPORT */
+
   /* TODO: check against @capabilities */
 
   ret = FALSE;
@@ -2067,6 +2082,18 @@ g_dbus_message_new_from_blob (guchar                *blob,
   message->type = g_memory_buffer_read_byte (&mbuf, NULL);
   message->flags = g_memory_buffer_read_byte (&mbuf, NULL);
   major_protocol_version = g_memory_buffer_read_byte (&mbuf, NULL);
+
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+  if (major_protocol_version != 2)
+    {
+      g_set_error (error,
+                   G_IO_ERROR,
+                   G_IO_ERROR_INVALID_ARGUMENT,
+                   _("Invalid major protocol version. Expected 2 but found %d"),
+                   major_protocol_version);
+      goto out;
+    }
+#else
   if (major_protocol_version != 1)
     {
       g_set_error (error,
@@ -2076,8 +2103,14 @@ g_dbus_message_new_from_blob (guchar                *blob,
                    major_protocol_version);
       goto out;
     }
+#endif /* KDBUS_TRANSPORT */
+
   message_body_len = g_memory_buffer_read_uint32 (&mbuf, NULL);
   message->serial = g_memory_buffer_read_uint32 (&mbuf, NULL);
+
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+  message_headers_len = g_memory_buffer_read_uint32 (&mbuf, NULL);
+#endif /* KDBUS_TRANSPORT */
 
 #ifdef DEBUG_SERIALIZER
   g_print ("Parsing blob (blob_len = 0x%04x bytes)\n", (gint) blob_len);
@@ -2092,11 +2125,23 @@ g_dbus_message_new_from_blob (guchar                *blob,
 #ifdef DEBUG_SERIALIZER
   g_print ("Parsing headers (blob_len = 0x%04x bytes)\n", (gint) blob_len);
 #endif /* DEBUG_SERIALIZER */
+
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+  headers = g_variant_new_from_data (G_VARIANT_TYPE ("a{yv}"),
+                                     mbuf.data + mbuf.pos,
+                                     message_headers_len,
+                                     TRUE,
+                                     NULL,
+                                     NULL);
+  mbuf.pos += message_headers_len;
+#else
   headers = parse_value_from_blob (&mbuf,
                                    G_VARIANT_TYPE ("a{yv}"),
                                    FALSE,
                                    2,
                                    error);
+#endif /* KDBUS_TRANSPORT */
+
   if (headers == NULL)
     goto out;
   g_variant_iter_init (&iter, headers);
@@ -2152,11 +2197,23 @@ g_dbus_message_new_from_blob (guchar                *blob,
 #ifdef DEBUG_SERIALIZER
           g_print ("Parsing body (blob_len = 0x%04x bytes)\n", (gint) blob_len);
 #endif /* DEBUG_SERIALIZER */
+
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+          ensure_input_padding (&mbuf,8,NULL);
+          message->body = g_variant_new_from_data (variant_type,
+                                                   mbuf.data + mbuf.pos,
+                                                   message_body_len,
+                                                   TRUE,
+                                                   NULL,
+                                                   NULL);
+#else
           message->body = parse_value_from_blob (&mbuf,
                                                  variant_type,
                                                  FALSE,
                                                  2,
                                                  error);
+#endif /* KDBUS_TRANSPORT */
+
           g_variant_type_free (variant_type);
           if (message->body == NULL)
             goto out;
@@ -2222,6 +2279,7 @@ ensure_output_padding (GMemoryBuffer  *mbuf,
   return padding_needed;
 }
 
+#ifndef KDBUS_TRANSPORT
 /* note that value can be NULL for e.g. empty arrays - type is never NULL */
 static gboolean
 append_value_to_blob (GVariant             *value,
@@ -2519,6 +2577,7 @@ append_value_to_blob (GVariant             *value,
   return FALSE;
 }
 
+
 static gboolean
 append_body_to_blob (GVariant             *value,
                      GMemoryBuffer  *mbuf,
@@ -2555,6 +2614,7 @@ append_body_to_blob (GVariant             *value,
  fail:
   return FALSE;
 }
+#endif /* KDBUS_TRANSPORT */
 
 /* ---------------------------------------------------------------------------------------------------- */
 
@@ -2596,6 +2656,14 @@ g_dbus_message_to_blob (GDBusMessage          *message,
   gint num_fds_in_message;
   gint num_fds_according_to_header;
 
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+  gconstpointer header_fields_data;
+  gsize header_fields_size;
+
+  gconstpointer message_body_data;
+  gsize message_body_size;
+#endif /* KDBUS_TRANSPORT */
+
   /* TODO: check against @capabilities */
 
   ret = NULL;
@@ -2623,7 +2691,14 @@ g_dbus_message_to_blob (GDBusMessage          *message,
   g_memory_buffer_put_byte (&mbuf, (guchar) message->byte_order);
   g_memory_buffer_put_byte (&mbuf, message->type);
   g_memory_buffer_put_byte (&mbuf, message->flags);
-  g_memory_buffer_put_byte (&mbuf, 1); /* major protocol version */
+
+  /* major protocol version */
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+  g_memory_buffer_put_byte (&mbuf, 2);
+#else
+  g_memory_buffer_put_byte (&mbuf, 2);
+#endif /* KDBUS_TRANSPORT */
+
   body_len_offset = mbuf.valid_len;
   /* body length - will be filled in later */
   g_memory_buffer_put_uint32 (&mbuf, 0xF00DFACE);
@@ -2663,6 +2738,13 @@ g_dbus_message_to_blob (GDBusMessage          *message,
     }
   header_fields = g_variant_builder_end (&builder);
 
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+  header_fields_data = g_variant_get_data (header_fields);
+  header_fields_size = g_variant_get_size (header_fields);
+
+  g_memory_buffer_put_uint32 (&mbuf, header_fields_size);
+  g_memory_buffer_write (&mbuf, header_fields_data, header_fields_size);
+#else
   if (!append_value_to_blob (header_fields,
                              g_variant_get_type (header_fields),
                              &mbuf,
@@ -2672,6 +2754,8 @@ g_dbus_message_to_blob (GDBusMessage          *message,
       g_variant_unref (header_fields);
       goto out;
     }
+#endif
+
   g_variant_unref (header_fields);
 
   /* header size must be a multiple of 8 */
@@ -2708,8 +2792,17 @@ g_dbus_message_to_blob (GDBusMessage          *message,
           goto out;
         }
       g_free (tupled_signature_str);
+
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+      message_body_data = g_variant_get_data (message->body);
+      message_body_size = g_variant_get_size (message->body);
+
+      g_memory_buffer_write (&mbuf, message_body_data, message_body_size);
+#else
       if (!append_body_to_blob (message->body, &mbuf, error))
         goto out;
+#endif /* KDBUS_TRANSPORT */
+
     }
   else
     {

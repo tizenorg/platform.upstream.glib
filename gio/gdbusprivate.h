@@ -1,6 +1,7 @@
 /* GDBus - GLib D-Bus Library
  *
  * Copyright (C) 2008-2010 Red Hat, Inc.
+ * Copyright (C) 2013 Samsung Electronics
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +18,9 @@
  * Free Software Foundation, Inc., 59 Temple Place, Suite 330,
  * Boston, MA 02111-1307, USA.
  *
- * Author: David Zeuthen <davidz@redhat.com>
+ * Author: David Zeuthen        <davidz@redhat.com>
+ * Author: Lukasz Skalski       <l.skalski@partner.samsung.com>
+ * Author: Michal Eljasiewicz   <m.eljasiewic@samsung.com>
  */
 
 #ifndef __G_DBUS_PRIVATE_H__
@@ -81,6 +84,9 @@ void         _g_dbus_worker_close        (GDBusWorker         *worker,
                                           GCancellable        *cancellable,
                                           GSimpleAsyncResult  *result);
 
+/* kdbus transport needs this function to generate local messages */
+void         _g_dbus_worker_queue_or_deliver_received_message (GDBusWorker  *worker,
+                                                               GDBusMessage *message);
 /* ---------------------------------------------------------------------------------------------------- */
 
 void _g_dbus_initialize (void);

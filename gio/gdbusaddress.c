@@ -1,6 +1,7 @@
 /* GDBus - GLib D-Bus Library
  *
  * Copyright (C) 2008-2010 Red Hat, Inc.
+ * Copyright (C) 2013 Samsung Electronics
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +18,9 @@
  * Free Software Foundation, Inc., 59 Temple Place, Suite 330,
  * Boston, MA 02111-1307, USA.
  *
- * Author: David Zeuthen <davidz@redhat.com>
+ * Author: David Zeuthen        <davidz@redhat.com>
+ * Author: Lukasz Skalski       <l.skalski@partner.samsung.com>
+ * Author: Michal Eljasiewicz   <m.eljasiewic@samsung.com>
  */
 
 #include "config.h"
@@ -44,6 +47,7 @@
 
 #ifdef G_OS_UNIX
 #include <gio/gunixsocketaddress.h>
+#include <gio/gkdbusconnection.h>
 #endif
 
 #ifdef G_OS_WIN32
@@ -360,6 +364,18 @@ is_valid_tcp (const gchar  *address_entry,
   return ret;
 }
 
+static int
+g_dbus_is_supported_address_kdbus (const gchar  *transport_name)
+{
+  int supported = 0;
+
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+  supported = g_strcmp0 (transport_name, "kernel") == 0;
+#endif
+
+  return supported;
+}
+
 /**
  * g_dbus_is_supported_address:
  * @string: A string.
@@ -401,7 +417,8 @@ g_dbus_is_supported_address (const gchar  *string,
         goto out;
 
       supported = FALSE;
-      if (g_strcmp0 (transport_name, "unix") == 0)
+      if ((g_strcmp0 (transport_name, "unix") == 0)
+          || g_dbus_is_supported_address_kdbus (transport_name))
         supported = is_valid_unix (a[n], key_value_pairs, error);
       else if (g_strcmp0 (transport_name, "tcp") == 0)
         supported = is_valid_tcp (a[n], key_value_pairs, error);
@@ -553,7 +570,8 @@ g_dbus_address_connect (const gchar   *address_entry,
     {
     }
 #ifdef G_OS_UNIX
-  else if (g_strcmp0 (transport_name, "unix") == 0)
+  if ((g_strcmp0 (transport_name, "unix") == 0)
+      || g_dbus_is_supported_address_kdbus (transport_name))
     {
       const gchar *path;
       const gchar *abstract;
@@ -664,21 +682,49 @@ g_dbus_address_connect (const gchar   *address_entry,
 
   if (connectable != NULL)
     {
-      GSocketClient *client;
-      GSocketConnection *connection;
 
-      g_assert (ret == NULL);
-      client = g_socket_client_new ();
-      connection = g_socket_client_connect (client,
-                                            connectable,
-                                            cancellable,
-                                            error);
-      g_object_unref (connectable);
-      g_object_unref (client);
-      if (connection == NULL)
-        goto out;
+      if (FALSE)
+        {
+        }
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+      else if (g_dbus_is_supported_address_kdbus (transport_name))
+        {
+          GKdbusConnection *connection;
 
-      ret = G_IO_STREAM (connection);
+          const gchar *path;
+          path = g_hash_table_lookup (key_value_pairs, "path");
+
+          g_assert (ret == NULL);
+          connection = g_kdbus_connection_new ();
+          g_kdbus_connection_connect (connection,
+                                      path,
+                                      cancellable,
+                                      error);
+          g_object_unref (connectable);
+          if (connection == NULL)
+            goto out;
+
+          ret = G_IO_STREAM (connection);
+        }
+#endif
+      else
+        {
+          GSocketClient *client;
+          GSocketConnection *connection;
+
+          g_assert (ret == NULL);
+          client = g_socket_client_new ();
+          connection = g_socket_client_connect (client,
+                                                connectable,
+                                                cancellable,
+                                                error);
+          g_object_unref (connectable);
+          g_object_unref (client);
+          if (connection == NULL)
+            goto out;
+
+          ret = G_IO_STREAM (connection);
+        }
 
       if (nonce_file != NULL)
         {

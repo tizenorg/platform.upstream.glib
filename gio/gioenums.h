@@ -902,6 +902,76 @@ typedef enum
 } GBusNameOwnerFlags;
 
 /**
+ * GBusNameOwnerReturnFlags:
+ * @G_BUS_REQUEST_NAME_REPLY_PRIMARY_OWNER: Caller is now the primary owner of the name, replacing any
+ * previous owner.
+ * @G_BUS_REQUEST_NAME_REPLY_IN_QUEUE: The name already had an owner, the application will be placed
+ * in a queue to own the name when the current owner gives it up.
+ * @G_BUS_REQUEST_NAME_REPLY_EXISTS: The name already has an owner.
+ * @G_BUS_REQUEST_NAME_REPLY_ALREADY_OWNER: The application trying to request ownership of a name is
+ * already the owner of it.
+ *
+ * Flags used in g_kdbus_RequestName_handler().
+ *
+ * Since: 2.39
+ */
+typedef enum
+{
+  G_BUS_REQUEST_NAME_REPLY_PRIMARY_OWNER = 1,
+  G_BUS_REQUEST_NAME_REPLY_IN_QUEUE = 2,
+  G_BUS_REQUEST_NAME_REPLY_EXISTS = 3,
+  G_BUS_REQUEST_NAME_REPLY_ALREADY_OWNER = 4
+} GBusNameOwnerReturnFlags;
+
+/**
+ * GBusReleaseNameReturnFlags:
+ * @G_BUS_RELEASE_NAME_REPLY_RELEASED: The caller has released his claim on the given name.
+ * @G_BUS_RELEASE_NAME_REPLY_NON_EXISTENT: The given name does not exist on this bus.
+ * @G_BUS_RELEASE_NAME_REPLY_NOT_OWNER: The caller was not the primary owner of this name, and was also
+ * not waiting in the queue to own this name.
+ *
+ * Flags used in g_kdbus_ReleaseName_handler().
+ *
+ * Since: 2.39
+ */
+typedef enum
+{
+  G_BUS_RELEASE_NAME_REPLY_RELEASED = 1,
+  G_BUS_RELEASE_NAME_REPLY_NON_EXISTENT = 2,
+  G_BUS_RELEASE_NAME_REPLY_NOT_OWNER = 3
+} GBusReleaseNameReturnFlags;
+
+/**
+ * GBusStartServiceReturnFlags:
+ * @G_BUS_START_REPLY_SUCCESS: The service was successfully started.
+ * @G_BUS_START_REPLY_ALREADY_RUNNING: A connection already owns the given name.
+ *
+ * Flags used in g_kdbus_StartServiceByName_handler().
+ *
+ * Since: 2.39
+ */
+typedef enum
+{
+  G_BUS_START_REPLY_SUCCESS = 1,
+  G_BUS_START_REPLY_ALREADY_RUNNING = 2,
+} GBusStartServiceReturnFlags;
+
+/**
+ * GBusCredentialsFlags:
+ *
+ * Flags used in g_kdbus_get_creds().
+ *
+ * Since: 2.39
+ */
+typedef enum
+{
+  G_BUS_CREDS_PID              = 1,
+  G_BUS_CREDS_UID              = 2,
+  G_BUS_CREDS_UNIQUE_NAME      = 3,
+  G_BUS_CREDS_SELINUX_CONTEXT  = 4
+} GBusCredentialsFlags;
+
+/**
  * GBusNameWatcherFlags:
  * @G_BUS_NAME_WATCHER_FLAGS_NONE: No flags set.
  * @G_BUS_NAME_WATCHER_FLAGS_AUTO_START: If no-one owns the name when
