@@ -3,7 +3,7 @@
 
 Name:           glib2
 Version:        2.36.4
-Release:        101+kdbus
+Release:        102+kdbus
 # FIXME: find out if tapsets should really be in devel package or in main package
 Summary:        General-Purpose Utility Library
 License:        LGPL-2.1+
