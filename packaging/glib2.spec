@@ -37,6 +37,8 @@ BuildRequires:  pkgconfig(libffi)
 BuildRequires:  pkgconfig(libpcre)
 BuildRequires:  pkgconfig(zlib)
 
+BuildRequires:  kdbus-devel
+
 %description
 GLib is a general-purpose utility library, which provides many useful
 data types, macros, type conversions, string utilities, file utilities,
