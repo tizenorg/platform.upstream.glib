@@ -904,14 +904,19 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
           /* [KDBUS] override informations from the user header with kernel msg header */
           if (G_IS_KDBUS_CONNECTION (worker->stream))
             {
+              GDBusMessageType message_type;
               gchar *sender;
               gchar *destination;
 
               sender = g_kdbus_get_last_msg_sender (worker->kdbus);
-              destination = g_kdbus_get_last_msg_destination (worker->kdbus);
-
               g_dbus_message_set_sender (message, sender);
-              g_dbus_message_set_destination (message, destination);
+
+              message_type = g_dbus_message_get_message_type (message);
+              if (message_type == G_DBUS_MESSAGE_TYPE_SIGNAL)
+                {
+                  destination = g_kdbus_get_last_msg_destination (worker->kdbus);
+                  g_dbus_message_set_destination (message, destination);
+                }
             }
 #endif
 

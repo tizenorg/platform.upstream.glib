@@ -1801,7 +1801,8 @@ g_kdbus_decode_kernel_msg (GKdbus  *kdbus)
 
   /* for destination */
   if (kdbus->priv->kmsg->dst_id == KDBUS_DST_ID_BROADCAST)
-    g_string_printf (kdbus->priv->msg_destination, NULL);
+    /* for broadcast messages we don't have to set destination */
+    ;
   else if (kdbus->priv->kmsg->dst_id == KDBUS_DST_ID_NAME)
     g_string_printf (kdbus->priv->msg_destination, ":1.%" G_GUINT64_FORMAT, (guint64) kdbus->priv->unique_id);
   else
@@ -1887,7 +1888,8 @@ g_kdbus_decode_dbus_msg (GKdbus  *kdbus)
   if (destination)
     g_string_printf (kdbus->priv->msg_destination, "%s", destination);
   else if (kdbus->priv->kmsg->dst_id == KDBUS_DST_ID_BROADCAST)
-    g_string_printf (kdbus->priv->msg_destination, NULL);
+    /* for broadcast messages we don't have to set destination */
+    ;
   else if (kdbus->priv->kmsg->dst_id == KDBUS_DST_ID_NAME)
     g_string_printf (kdbus->priv->msg_destination, ":1.%" G_GUINT64_FORMAT, (guint64) kdbus->priv->unique_id);
   else
