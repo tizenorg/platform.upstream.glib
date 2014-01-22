@@ -1425,11 +1425,33 @@ ostream_flush_cb (GObject      *source_object,
 static void
 start_flush (FlushAsyncData *data)
 {
-  g_output_stream_flush_async (g_io_stream_get_output_stream (data->worker->stream),
-                               G_PRIORITY_DEFAULT,
-                               data->worker->cancellable,
-                               ostream_flush_cb,
-                               data);
+  /*[KDBUS]: TODO: to investigate */
+  if (G_IS_KDBUS_CONNECTION (data->worker->stream))
+    {
+      g_assert (data->flushers != NULL);
+      flush_data_list_complete (data->flushers, NULL);
+      g_list_free (data->flushers);
+
+      g_mutex_lock (&data->worker->write_lock);
+      data->worker->write_num_messages_flushed = data->worker->write_num_messages_written;
+      g_assert (data->worker->output_pending == PENDING_FLUSH);
+      data->worker->output_pending = PENDING_NONE;
+      g_mutex_unlock (&data->worker->write_lock);
+
+      /* OK, cool, finally kick off the next write */
+      continue_writing (data->worker);
+
+      _g_dbus_worker_unref (data->worker);
+      g_free (data);
+    }
+  else
+    {
+      g_output_stream_flush_async (g_io_stream_get_output_stream (data->worker->stream),
+                                   G_PRIORITY_DEFAULT,
+                                   data->worker->cancellable,
+                                   ostream_flush_cb,
+                                   data);
+    }
 }
 
 /* called in private thread shared by all GDBusConnection instances

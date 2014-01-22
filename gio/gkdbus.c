@@ -1605,15 +1605,8 @@ g_kdbus_release_kmsg (GKdbus  *kdbus)
   guint64 offset;
 
   offset = (guint8 *)kdbus->priv->kmsg - (guint8 *)kdbus->priv->kdbus_buffer;
+  ioctl(kdbus->priv->fd, KDBUS_CMD_FREE, &offset);
 
-  again:
-  if (ioctl(kdbus->priv->fd, KDBUS_CMD_FREE, &offset) < 0)
-    {
-      if (errno == EINTR)
-        goto again;
-
-      g_error ("[KDBUS] ioctl MSG_RELEASE failed!");
-    }
   /* TODO: Add here closing FDS and MEMFD after adding support for them */
 }
 
