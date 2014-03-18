@@ -182,6 +182,7 @@ fi
 NOCONFIGURE=1 ./autogen.sh
 %configure \
     --enable-static \
+    --enable-kdbus-transport \
 %if 0%{?with_systemtap}
     --enable-systemtap \
 %endif
