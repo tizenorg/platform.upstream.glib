@@ -2064,7 +2064,7 @@ g_dbus_message_new_from_blob (guchar                *blob,
   GMemoryBuffer mbuf;
   GDBusMessage *message;
   guchar endianness;
-  guchar major_protocol_version;
+  guchar major_protocol_version = 2;
   guint32 message_body_len;
   guint32 message_headers_len;
   GVariant *headers;
@@ -2085,18 +2085,22 @@ g_dbus_message_new_from_blob (guchar                *blob,
 
   memset (&mbuf, 0, sizeof (mbuf));
 
-  /* TODO: Preserve compatibility with dbus1 marshalling */
-  //if (major_protocol_version == 1)
-  //  {
-  //    mbuf.data = (gchar *)blob;
-  //    mbuf.len = mbuf.valid_len = blob_len;
-  //  }
-  //else if (major_protocol_version == 2)
-  //  {
+  /* FIXME: Preserve compatibility with dbus1 marshalling */
+  if (blob[3] == 1 && (blob[0] == 'l' || blob[0] == 'B'))
+    major_protocol_version = 1;
+  /* end */
+
+  if (major_protocol_version == 1)
+    {
+      mbuf.data = (gchar *)blob;
+      mbuf.len = mbuf.valid_len = blob_len;
+    }
+  else if (major_protocol_version == 2)
+    {
         items_list = (GSList*) blob;
         mbuf.data = ((msg_part*)items_list->data)->data;
         mbuf.len = mbuf.valid_len = ((msg_part*)items_list->data)->size;
-  //  }
+    }
 
   endianness = g_memory_buffer_read_byte (&mbuf, NULL);
   switch (endianness)
