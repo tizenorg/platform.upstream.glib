@@ -690,19 +690,24 @@ g_dbus_address_connect (const gchar   *address_entry,
       else if (g_dbus_is_supported_address_kdbus (transport_name))
         {
           GKdbusConnection *connection;
+          gboolean status;
 
           const gchar *path;
           path = g_hash_table_lookup (key_value_pairs, "path");
 
           g_assert (ret == NULL);
           connection = _g_kdbus_connection_new ();
-          _g_kdbus_connection_connect (connection,
-                                       path,
-                                       cancellable,
-                                       error);
+          status = _g_kdbus_connection_connect (connection,
+                                                path,
+                                                cancellable,
+                                                error);
           g_object_unref (connectable);
-          if (connection == NULL)
-            goto out;
+
+          if (!status)
+            {
+              //FIXME: g_object_unref (connection);
+              goto out;
+            }
 
           ret = G_IO_STREAM (connection);
         }
@@ -1553,7 +1558,11 @@ g_dbus_address_get_for_bus_sync (GBusType       bus_type,
       ret = g_strdup (g_getenv ("DBUS_SYSTEM_BUS_ADDRESS"));
       if (ret == NULL)
         {
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+          ret = g_strdup ("kernel:path=/dev/kdbus/0-system/bus;unix:path=/var/run/dbus/system_bus_socket");
+#else
           ret = g_strdup ("unix:path=/var/run/dbus/system_bus_socket");
+#endif
         }
       break;
 
@@ -1561,7 +1570,11 @@ g_dbus_address_get_for_bus_sync (GBusType       bus_type,
       ret = g_strdup (g_getenv ("DBUS_SESSION_BUS_ADDRESS"));
       if (ret == NULL)
         {
+#if defined (G_OS_UNIX) && (KDBUS_TRANSPORT)
+          ret = g_strdup_printf ("kernel:path=/dev/kdbus/%d-user/bus;unix:path=%s/bus", getuid(), g_getenv ("XDG_RUNTIME_DIR"));
+#else
           ret = get_session_address_platform_specific (&local_error);
+#endif
         }
       break;
 
@@ -1609,6 +1622,7 @@ g_dbus_address_get_for_bus_sync (GBusType       bus_type,
     }
 
  out:
+
   if (G_UNLIKELY (_g_dbus_debug_address ()))
     {
       _g_dbus_debug_print_lock ();

@@ -559,7 +559,7 @@ _g_kdbus_open (GKdbus       *kdbus,
 
   if (kdbus->priv->fd<0)
     {
-      g_error ("[KDBUS] error when opening endpoint: %m, %d",errno);
+      g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_FAILED, _("Can't open kdbus endpoint"));
       return FALSE;
     }
 
