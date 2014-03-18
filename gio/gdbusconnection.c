@@ -1,6 +1,7 @@
 /* GDBus - GLib D-Bus Library
  *
  * Copyright (C) 2008-2010 Red Hat, Inc.
+ * Copyright (C) 2013 Samsung Electronics
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +18,9 @@
  * Free Software Foundation, Inc., 59 Temple Place, Suite 330,
  * Boston, MA 02111-1307, USA.
  *
- * Author: David Zeuthen <davidz@redhat.com>
+ * Author: David Zeuthen        <davidz@redhat.com>
+ * Author: Lukasz Skalski       <l.skalski@samsung.com>
+ * Author: Michal Eljasiewicz   <m.eljasiewic@samsung.com>
  */
 
 /*
@@ -128,6 +131,7 @@
 #include "gsimpleasyncresult.h"
 
 #ifdef G_OS_UNIX
+#include "gkdbusconnection.h"
 #include "gunixconnection.h"
 #include "gunixfdmessage.h"
 #endif
@@ -1647,6 +1651,11 @@ g_dbus_connection_send_message_unlocked (GDBusConnection   *connection,
                        error))
     goto out;
 
+  if (G_IS_KDBUS_CONNECTION (connection->stream))
+    _g_dbus_message_set_protocol_ver (message,2);
+  else
+    _g_dbus_message_set_protocol_ver (message,1);
+
   blob = g_dbus_message_to_blob (message,
                                  &blob_size,
                                  connection->capabilities,
@@ -2579,6 +2588,15 @@ initable_init (GInitable     *initable,
       g_assert_not_reached ();
     }
 
+  /* TODO: [KDBUS] At this moment kdbus doesn't support any
+           authentication/negotiation protocol */
+  if (G_IS_KDBUS_CONNECTION (connection->stream))
+    {
+      connection->capabilities |= G_DBUS_CAPABILITY_FLAGS_UNIX_FD_PASSING;
+      /* TODO: [KDBUS] set GCredentials? */
+      goto authenticated;
+    }
+
   /* Authenticate the connection */
   if (connection->flags & G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_SERVER)
     {
@@ -2616,6 +2634,8 @@ initable_init (GInitable     *initable,
       g_object_unref (connection->authentication_observer);
       connection->authentication_observer = NULL;
     }
+
+authenticated:
 
   //g_output_stream_flush (G_SOCKET_CONNECTION (connection->stream)
 
@@ -3690,7 +3710,7 @@ emit_signal_instance_in_idle_cb (gpointer data)
     }
   else
     {
-      g_variant_ref_sink (parameters);
+      g_variant_ref (parameters);
     }
 
 #if 0

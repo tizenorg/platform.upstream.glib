@@ -194,6 +194,15 @@ GLIB_AVAILABLE_IN_ALL
 gboolean                  g_dbus_message_to_gerror          (GDBusMessage             *message,
                                                              GError                  **error);
 
+GSList                    *_g_dbus_message_to_blob_new      (GIOStream                *stream,
+                                                             GDBusMessage             *message,
+                                                             GError                  **error);
+
+guint32                   _g_dbus_message_get_protocol_ver  (GDBusMessage             *message);
+
+void                      _g_dbus_message_set_protocol_ver  (GDBusMessage             *message,
+                                                             guint32                   protocol_ver);
+
 G_END_DECLS
 
 #endif /* __G_DBUS_MESSAGE_H__ */

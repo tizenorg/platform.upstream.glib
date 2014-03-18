@@ -51,6 +51,7 @@
 #include "gdbusprivate.h"
 
 #ifdef G_OS_UNIX
+#include "gkdbus.h"
 #include "gunixfdlist.h"
 #endif
 
@@ -1021,6 +1022,47 @@ g_dbus_message_set_serial (GDBusMessage  *message,
 
 /* ---------------------------------------------------------------------------------------------------- */
 
+/**
+  * _g_dbus_message_get_protocol_ver:
+  * @message: A #GDBusMessage.
+  *
+  * Gets the protocol version for @message.
+  *
+  * Returns: A #guint32.
+  *
+  */
+guint32
+_g_dbus_message_get_protocol_ver (GDBusMessage *message)
+{
+  g_return_val_if_fail (G_IS_DBUS_MESSAGE (message), 0);
+  return message->major_protocol_version;
+}
+
+/**
+  * _g_dbus_message_set_protocol_ver:
+  * @message: A #GDBusMessage.
+  * @serial: A #guint32.
+  *
+  * Sets the protocol version for @message.
+  *
+  */
+void
+_g_dbus_message_set_protocol_ver (GDBusMessage  *message,
+                                  guint32        protocol_ver)
+{
+  g_return_if_fail (G_IS_DBUS_MESSAGE (message));
+
+  if (message->locked)
+    {
+      g_warning ("%s: Attempted to modify a locked message", G_STRFUNC);
+      return;
+    }
+
+  message->major_protocol_version = protocol_ver;
+}
+
+/* ---------------------------------------------------------------------------------------------------- */
+
 /* TODO: need GI annotations to specify that any guchar value goes for header_field */
 
 /**
@@ -1349,9 +1391,8 @@ validate_headers (GDBusMessage  *message,
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
-
 static gboolean
-ensure_input_padding (GMemoryBuffer         *buf,
+ensure_input_padding (GMemoryBuffer        *buf,
                       gsize                 padding_size,
                       GError              **error)
 {
@@ -2025,10 +2066,12 @@ g_dbus_message_new_from_blob (guchar                *blob,
   guchar endianness;
   guchar major_protocol_version;
   guint32 message_body_len;
+  guint32 message_headers_len;
   GVariant *headers;
   GVariant *item;
   GVariantIter iter;
   GVariant *signature;
+  GSList *items_list;
 
   /* TODO: check against @capabilities */
 
@@ -2041,8 +2084,19 @@ g_dbus_message_new_from_blob (guchar                *blob,
   message = g_dbus_message_new ();
 
   memset (&mbuf, 0, sizeof (mbuf));
-  mbuf.data = (gchar *)blob;
-  mbuf.len = mbuf.valid_len = blob_len;
+
+  /* TODO: Preserve compatibility with dbus1 marshalling */
+  //if (major_protocol_version == 1)
+  //  {
+  //    mbuf.data = (gchar *)blob;
+  //    mbuf.len = mbuf.valid_len = blob_len;
+  //  }
+  //else if (major_protocol_version == 2)
+  //  {
+        items_list = (GSList*) blob;
+        mbuf.data = ((msg_part*)items_list->data)->data;
+        mbuf.len = mbuf.valid_len = ((msg_part*)items_list->data)->size;
+  //  }
 
   endianness = g_memory_buffer_read_byte (&mbuf, NULL);
   switch (endianness)
@@ -2067,17 +2121,22 @@ g_dbus_message_new_from_blob (guchar                *blob,
   message->type = g_memory_buffer_read_byte (&mbuf, NULL);
   message->flags = g_memory_buffer_read_byte (&mbuf, NULL);
   major_protocol_version = g_memory_buffer_read_byte (&mbuf, NULL);
-  if (major_protocol_version != 1)
+
+  if (major_protocol_version != 1 && major_protocol_version != 2)
     {
       g_set_error (error,
                    G_IO_ERROR,
                    G_IO_ERROR_INVALID_ARGUMENT,
-                   _("Invalid major protocol version. Expected 1 but found %d"),
+                   _("Invalid major protocol version. Expected 1 or 2 but found %d"),
                    major_protocol_version);
       goto out;
     }
+
   message_body_len = g_memory_buffer_read_uint32 (&mbuf, NULL);
   message->serial = g_memory_buffer_read_uint32 (&mbuf, NULL);
+
+  if (major_protocol_version == 2)
+    message_headers_len = g_memory_buffer_read_uint32 (&mbuf, NULL);
 
 #ifdef DEBUG_SERIALIZER
   g_print ("Parsing blob (blob_len = 0x%04x bytes)\n", (gint) blob_len);
@@ -2092,11 +2151,28 @@ g_dbus_message_new_from_blob (guchar                *blob,
 #ifdef DEBUG_SERIALIZER
   g_print ("Parsing headers (blob_len = 0x%04x bytes)\n", (gint) blob_len);
 #endif /* DEBUG_SERIALIZER */
-  headers = parse_value_from_blob (&mbuf,
-                                   G_VARIANT_TYPE ("a{yv}"),
-                                   FALSE,
-                                   2,
-                                   error);
+
+  /* headers - dbus1 marshaliling */
+  if (major_protocol_version == 1)
+    {
+      headers = parse_value_from_blob (&mbuf,
+                                       G_VARIANT_TYPE ("a{yv}"),
+                                       FALSE,
+                                       2,
+                                       error);
+    }
+  /* headers - GVariant marshaliling */
+  else if (major_protocol_version == 2)
+    {
+      headers = g_variant_new_from_data (G_VARIANT_TYPE ("a{yv}"),
+                                         mbuf.data + mbuf.pos,
+                                         message_headers_len,
+                                         TRUE,
+                                         NULL,
+                                         NULL);
+      mbuf.pos += message_headers_len;
+    }
+
   if (headers == NULL)
     goto out;
   g_variant_iter_init (&iter, headers);
@@ -2152,11 +2228,56 @@ g_dbus_message_new_from_blob (guchar                *blob,
 #ifdef DEBUG_SERIALIZER
           g_print ("Parsing body (blob_len = 0x%04x bytes)\n", (gint) blob_len);
 #endif /* DEBUG_SERIALIZER */
-          message->body = parse_value_from_blob (&mbuf,
-                                                 variant_type,
-                                                 FALSE,
-                                                 2,
-                                                 error);
+
+          /* body - dbus1 marshaliling */
+          if (major_protocol_version == 1)
+            {
+              message->body = parse_value_from_blob (&mbuf,
+                                                     variant_type,
+                                                     FALSE,
+                                                     2,
+                                                     error);
+            }
+          /* body - GVariant marshaliling */
+          else if (major_protocol_version == 2)
+            {
+              gchar *data = NULL;
+              gsize size = NULL;
+
+              /*
+               * items_list has only one element, so head and body are
+               * containded in a single PALOAD_VEC item
+               */
+              if (g_slist_length(items_list) == 1)
+                {
+                  ensure_input_padding (&mbuf,8,NULL);
+                  data = mbuf.data + mbuf.pos;
+                  size = message_body_len;
+                }
+
+              /*
+               * message consists two or more items
+               * TODO: Add support for three and more items
+               */
+              else if (g_slist_length(items_list) > 1)
+                {
+                  data = ((msg_part*)g_slist_next(items_list)->data)->data;
+                  size = ((msg_part*)g_slist_next(items_list)->data)->size;
+                }
+              else
+                {
+                  g_error ("[KDBUS] Message is not valid and should be dropped\n");
+                  /* TODO: Drop this message */
+                }
+
+              message->body = g_variant_new_from_data (variant_type,
+                                                       data,
+                                                       size,
+                                                       TRUE,
+                                                       NULL,
+                                                       NULL);
+            }
+
           g_variant_type_free (variant_type);
           if (message->body == NULL)
             goto out;
@@ -2559,6 +2680,22 @@ append_body_to_blob (GVariant             *value,
 /* ---------------------------------------------------------------------------------------------------- */
 
 /**
+ * _g_dbus_message_to_blob_new:
+ *
+ */
+GSList *
+_g_dbus_message_to_blob_new (GIOStream     *stream,
+                             GDBusMessage  *message,
+                             GError       **error)
+{
+  g_error ("WIP");
+  return 0;
+}
+
+
+/* ---------------------------------------------------------------------------------------------------- */
+
+/**
  * g_dbus_message_to_blob:
  * @message: A #GDBusMessage.
  * @out_size: Return location for size of generated blob.
@@ -2586,7 +2723,11 @@ g_dbus_message_to_blob (GDBusMessage          *message,
   goffset body_len_offset;
   goffset body_start_offset;
   gsize body_size;
+  gconstpointer message_body_data;
+  gsize message_body_size;
   GVariant *header_fields;
+  gsize header_fields_size;
+  gconstpointer header_fields_data;
   GVariantBuilder builder;
   GHashTableIter hash_iter;
   gpointer key;
@@ -2603,6 +2744,22 @@ g_dbus_message_to_blob (GDBusMessage          *message,
   g_return_val_if_fail (G_IS_DBUS_MESSAGE (message), NULL);
   g_return_val_if_fail (out_size != NULL, NULL);
   g_return_val_if_fail (error == NULL || *error == NULL, NULL);
+
+  /* Now we have two version of major_protocol, so g_dbus_message_to_blob()
+   * shouldn't be public (as Ryan suggested us during the FOSDEM)
+   */
+  if (!message->major_protocol_version)
+    g_error ("DEPRECATED: message->major_protocol_version is not set. g_dbus_message_to_blob shouldn't be public");
+
+  if (message->major_protocol_version != 1 && message->major_protocol_version != 2)
+    {
+      g_set_error (error,
+                   G_IO_ERROR,
+                   G_IO_ERROR_INVALID_ARGUMENT,
+                   _("Invalid major protocol version. Expected 1 or 2 but found %d"),
+                   message->major_protocol_version);
+      goto out;
+    }
 
   memset (&mbuf, 0, sizeof (mbuf));
   mbuf.len = MIN_ARRAY_SIZE;
@@ -2623,7 +2780,10 @@ g_dbus_message_to_blob (GDBusMessage          *message,
   g_memory_buffer_put_byte (&mbuf, (guchar) message->byte_order);
   g_memory_buffer_put_byte (&mbuf, message->type);
   g_memory_buffer_put_byte (&mbuf, message->flags);
-  g_memory_buffer_put_byte (&mbuf, 1); /* major protocol version */
+
+  /* major protocol version */
+  g_memory_buffer_put_byte (&mbuf, message->major_protocol_version);
+
   body_len_offset = mbuf.valid_len;
   /* body length - will be filled in later */
   g_memory_buffer_put_uint32 (&mbuf, 0xF00DFACE);
@@ -2663,15 +2823,30 @@ g_dbus_message_to_blob (GDBusMessage          *message,
     }
   header_fields = g_variant_builder_end (&builder);
 
-  if (!append_value_to_blob (header_fields,
-                             g_variant_get_type (header_fields),
-                             &mbuf,
-                             NULL,
-                             error))
+  /* header - dbus1 marshaliling */
+  if (message->major_protocol_version == 1)
     {
-      g_variant_unref (header_fields);
-      goto out;
+      if (!append_value_to_blob (header_fields,
+                                 g_variant_get_type (header_fields),
+                                 &mbuf,
+                                 NULL,
+                                 error))
+        {
+          g_variant_unref (header_fields);
+          goto out;
+        }
+
     }
+  /* header - GVariant marshalling */
+  else if (message->major_protocol_version == 2)
+    {
+      header_fields_data = g_variant_get_data (header_fields);
+      header_fields_size = g_variant_get_size (header_fields);
+
+      g_memory_buffer_put_uint32 (&mbuf, header_fields_size);
+      g_memory_buffer_write (&mbuf, header_fields_data, header_fields_size);
+    }
+
   g_variant_unref (header_fields);
 
   /* header size must be a multiple of 8 */
@@ -2708,8 +2883,21 @@ g_dbus_message_to_blob (GDBusMessage          *message,
           goto out;
         }
       g_free (tupled_signature_str);
-      if (!append_body_to_blob (message->body, &mbuf, error))
-        goto out;
+
+      /* body - dbus1 marshaliling */
+      if (message->major_protocol_version == 1)
+        {
+          if (!append_body_to_blob (message->body, &mbuf, error))
+            goto out;
+        }
+      /* body - GVariant marshalling */
+      else if (message->major_protocol_version == 2)
+        {
+          message_body_data = g_variant_get_data (message->body);
+          message_body_size = g_variant_get_size (message->body);
+
+          g_memory_buffer_write (&mbuf, message_body_data, message_body_size);
+        }
     }
   else
     {
@@ -2738,6 +2926,7 @@ g_dbus_message_to_blob (GDBusMessage          *message,
  out:
   return ret;
 }
+
 
 /* ---------------------------------------------------------------------------------------------------- */
 
