@@ -92,6 +92,8 @@ GSource *                               _g_kdbus_create_source             (GKdb
 
 void                                    _g_kdbus_release_kmsg              (GKdbus  *kdbus);
 
+void *                                  _g_kdbus_get_policy                (GKdbus  *kdbus);
+
 gchar *                                 _g_kdbus_get_msg_buffer_ptr        (GKdbus  *kdbus);
 
 gchar *                                 _g_kdbus_get_last_msg_sender       (GKdbus  *kdbus);

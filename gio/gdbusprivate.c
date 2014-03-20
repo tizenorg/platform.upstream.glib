@@ -55,6 +55,8 @@
 #include "gunixcredentialsmessage.h"
 #endif
 
+#include <dbus/dbus-policy.h>
+
 #ifdef G_OS_WIN32
 #include <windows.h>
 #endif
@@ -908,6 +910,10 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
               gchar *sender;
               gchar *destination;
 
+              void *policy;
+              gint msg_type = 0;
+              gint msg_req_reply = 0;
+
               sender = _g_kdbus_get_last_msg_sender (worker->kdbus);
               g_dbus_message_set_sender (message, sender);
 
@@ -916,6 +922,42 @@ _g_dbus_worker_do_read_cb (GInputStream  *input_stream,
                 {
                   destination = _g_kdbus_get_last_msg_destination (worker->kdbus);
                   g_dbus_message_set_destination (message, destination);
+                }
+
+              /* now let's check policy rules */
+              policy = _g_kdbus_get_policy (worker->kdbus);
+
+              if (G_DBUS_MESSAGE_TYPE_METHOD_CALL == g_dbus_message_get_message_type (message))
+                msg_type = 1;
+              else if (G_DBUS_MESSAGE_TYPE_METHOD_RETURN == g_dbus_message_get_message_type (message))
+                msg_type = 2;
+              else if (G_DBUS_MESSAGE_TYPE_ERROR == g_dbus_message_get_message_type (message))
+                msg_type = 4;
+              else if (G_DBUS_MESSAGE_TYPE_SIGNAL == g_dbus_message_get_message_type (message))
+                msg_type = 3;
+              else
+                g_error ("[POLICY DEBUG] WTF? Messages should have type!\n");
+
+              if (g_dbus_message_get_reply_serial (message) == 0)
+                msg_req_reply = NO_REQUESTED_REPLY;
+              else if (g_dbus_message_get_reply_serial (message) != 0)
+                msg_req_reply = REQUESTED_REPLY;
+
+              if (dbus_policy_check_can_recv (policy,
+                                              msg_type,                                  /* method call */
+                                              g_dbus_message_get_sender (message),       /* sender(!) */
+                                              g_dbus_message_get_path (message),         /* path */
+                                              g_dbus_message_get_interface (message),    /* interface */
+                                              g_dbus_message_get_member (message),       /* member */
+                                              g_dbus_message_get_error_name (message),   /* error name */
+                                              g_dbus_message_get_reply_serial (message), /* reply serial */
+                                              msg_req_reply))                            /* requested reply */
+                {
+                  g_print ("[POLICY DEBUG] This message is ok - let's deliver it to user app\n");
+                }
+              else
+                {
+                  g_print ("[POLICY DEBUG] I should drop this message 'Right here, Right Now' :)!\n");
                 }
             }
 #endif

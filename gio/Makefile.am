@@ -204,7 +204,7 @@ local_sources = \
 	gsocks5proxy.h			\
 	$(NULL)
 
-platform_libadd =
+platform_libadd = -ldbuspolicy-1
 platform_deps =
 appinfo_sources =
 
@@ -482,7 +482,7 @@ libgio_2_0_la_LIBADD = \
 	$(NETWORK_LIBS)					\
 	$(NULL)
 
-libgio_2_0_la_CPPFLAGS = $(ZLIB_CFLAGS) $(AM_CPPFLAGS)
+libgio_2_0_la_CPPFLAGS = $(ZLIB_CFLAGS) $(DBUS1_CFLAGS) $(AM_CPPFLAGS)
 
 if PLATFORM_WIN32
 no_undefined = -no-undefined

@@ -36,6 +36,13 @@ BuildRequires:  pkgconfig(libelf) >= 0.8.12
 BuildRequires:  pkgconfig(libffi)
 BuildRequires:  pkgconfig(libpcre)
 BuildRequires:  pkgconfig(zlib)
+BuildRequires:  dbus-1
+BuildRequires:  libdbuspolicy
+
+BuildRequires:  expat-devel
+BuildRequires:  pkgconfig(libsystemd-daemon)
+BuildRequires:  pkgconfig(libsystemd-login)
+BuildRequires:  pkgconfig(libsmack)
 
 %description
 GLib is a general-purpose utility library, which provides many useful
@@ -136,6 +143,7 @@ Summary:        General-Purpose Utility Library -- Library for VFS
 Requires:       gio-branding = %{version}
 # bnc#555605: shared-mime-info is required by libgio to properly detect mime types.
 Requires:       shared-mime-info
+Requires:       libdbuspolicy
 # bnc#678518: libgio interacts with others by means of dbus-launch
 #Requires:       dbus-1-x11
 Provides:       gio = %{version}

@@ -39,6 +39,8 @@
 #include <sys/uio.h>
 #endif
 
+#include <dbus/dbus-policy.h>
+
 #include <gio/gio.h>
 #include "glibintl.h"
 #include "kdbus.h"
@@ -154,6 +156,9 @@ struct _GKdbusPrivate
   guint              bloom_n_hash;
 
   gint               memfd;
+
+  /* only for libdbuspolicy purposes */
+  void              *policy;
 };
 
 
@@ -221,6 +226,17 @@ _g_kdbus_get_msg_buffer_ptr (GKdbus  *kdbus)
 
 
 /**
+ * _g_kdbus_get_policy:
+ *
+ */
+void *
+_g_kdbus_get_policy (GKdbus  *kdbus)
+{
+  return kdbus->priv->policy;
+}
+
+
+/**
  * g_kdbus_add_msg_part:
  *
  */
@@ -250,6 +266,9 @@ g_kdbus_finalize (GObject  *object)
 
   g_string_free (kdbus->priv->msg_sender, TRUE);
   g_string_free (kdbus->priv->msg_destination, TRUE);
+
+  /* only for libdbus purposes - free policy memory */
+  dbus_policy_free (kdbus->priv->policy);
 
   if (G_OBJECT_CLASS (g_kdbus_parent_class)->finalize)
     (*G_OBJECT_CLASS (g_kdbus_parent_class)->finalize) (object);
@@ -553,6 +572,13 @@ _g_kdbus_open (GKdbus       *kdbus,
                const gchar  *address,
                GError      **error)
 {
+  GString     *full_path = NULL;
+  const gchar *system_bus = NULL;
+  const gchar *session_bus = NULL;
+
+  full_path = g_string_new (NULL);
+  g_string_printf (full_path, "kernel:path=%s", address);
+
   g_return_val_if_fail (G_IS_KDBUS (kdbus), FALSE);
 
   kdbus->priv->fd = open(address, O_RDWR|O_NOCTTY|O_CLOEXEC);
@@ -565,7 +591,37 @@ _g_kdbus_open (GKdbus       *kdbus,
 
   kdbus->priv->closed = FALSE;
 
-  return TRUE;
+  /* only for libdbuspolicy purposes - policy init */
+  g_print ("[POLICY DEBUG] Bus: %s\n", full_path->str);
+
+  system_bus = g_getenv ("DBUS_SYSTEM_BUS_ADDRESS");
+  if (system_bus != NULL)
+    {
+      if (g_strcmp0 (full_path->str, g_getenv ("DBUS_SYSTEM_BUS_ADDRESS")) == 0)
+        {
+          /* system bus */
+          g_print ("[POLICY DEBUG] policy init for SYSTEM bus\n");
+          kdbus->priv->policy = dbus_policy_init (SYSTEM_BUS);
+          g_string_free (full_path,TRUE);
+          return TRUE;
+        }
+    }
+
+  session_bus = g_getenv ("DBUS_SESSION_BUS_ADDRESS");
+  if (session_bus != NULL)
+    {
+      if (g_strcmp0 (full_path->str, g_getenv ("DBUS_SESSION_BUS_ADDRESS")) == 0)
+        {
+          /* session */
+          g_print ("[POLICY DEBUG] policy init for SESSION bus\n");
+          kdbus->priv->policy = dbus_policy_init (SESSION_BUS);
+          g_string_free (full_path,TRUE);
+          return TRUE;
+        }
+    }
+
+  g_error ("DBUS_SYSTEM_BUS_ADDRESS or DBUS_SESSION_BUS_ADDRESS isn't set!\n");
+  return FALSE;
 }
 
 
@@ -2252,6 +2308,70 @@ _g_kdbus_send (GDBusWorker   *worker,
 
   if (g_cancellable_set_error_if_cancelled (cancellable, error))
     return -1;
+
+  /* only for libdbuspolicy purposes - if member is "RequestName" check whether we can own this name */
+  if ((g_strcmp0(g_dbus_message_get_destination(dbus_msg), "org.freedesktop.DBus") == 0) &&
+      (g_strcmp0(g_dbus_message_get_member(dbus_msg), "RequestName") == 0))
+    {
+      GVariant *body = NULL;
+      const gchar *name = NULL;
+      GBusNameOwnerFlags flags;
+
+      body = g_dbus_message_get_body (dbus_msg);
+      g_variant_get (body, "(&su)", &name, &flags);
+
+      if (name == NULL)
+        g_error ("[POLICY DEBUG] WTF? 'RequestName arg is NULL!\n");
+
+      if (dbus_policy_check_can_own (kdbus->priv->policy, name))
+        {
+          g_print ("[POLICY DEBUG] I can own this name\n");
+        }
+      else
+        {
+          g_print ("[POLICY DEBUG] I can't own this name - this message should be dropped\n");
+        }
+    }
+
+  /* only for libdbuspolicy purposes - if message destination isn't equal "org.freedesktop.DBus" we should check policy rules */
+  if (g_strcmp0(g_dbus_message_get_destination(dbus_msg), "org.freedesktop.DBus") != 0)
+    {
+      gint msg_type = 0;
+      gint msg_req_reply = 0;
+
+      if (G_DBUS_MESSAGE_TYPE_METHOD_CALL == g_dbus_message_get_message_type (dbus_msg))
+        msg_type = 1;
+      else if (G_DBUS_MESSAGE_TYPE_METHOD_RETURN == g_dbus_message_get_message_type (dbus_msg))
+        msg_type = 2;
+      else if (G_DBUS_MESSAGE_TYPE_ERROR == g_dbus_message_get_message_type (dbus_msg))
+        msg_type = 4;
+      else if (G_DBUS_MESSAGE_TYPE_SIGNAL == g_dbus_message_get_message_type (dbus_msg))
+        msg_type = 3;
+      else
+        g_error ("[POLICY DEBUG] WTF? Messages should have type!\n");
+
+      if (g_dbus_message_get_reply_serial (dbus_msg) == 0)
+        msg_req_reply = NO_REQUESTED_REPLY;
+      else if (g_dbus_message_get_reply_serial (dbus_msg) != 0)
+        msg_req_reply = REQUESTED_REPLY;
+
+      if (dbus_policy_check_can_send (kdbus->priv->policy,
+                                      msg_type,                                   /* message type */
+                                      g_dbus_message_get_destination (dbus_msg),  /* destination */
+                                      g_dbus_message_get_path (dbus_msg),         /* path */
+                                      g_dbus_message_get_interface (dbus_msg),    /* interface */
+                                      g_dbus_message_get_member (dbus_msg),       /* member */
+                                      g_dbus_message_get_error_name (dbus_msg),   /* error name */
+                                      g_dbus_message_get_reply_serial (dbus_msg), /* reply serial */
+                                      msg_req_reply))                             /* requested reply */
+        {
+          g_print ("[POLICY DEBUG] I can send this message\n");
+        }
+      else
+        {
+          g_print ("[POLICY DEBUG] I should drop this message\n");
+        }
+    }
 
 
   /*
