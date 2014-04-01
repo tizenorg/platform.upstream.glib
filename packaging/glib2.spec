@@ -1,15 +1,16 @@
+%define baseline 2.40
 %define with_systemtap 0
 %define keepstatic 1
 
 Name:           glib2
-Version:        2.36.4
+Version:        2.40.0
 Release:        0
 # FIXME: find out if tapsets should really be in devel package or in main package
 Summary:        General-Purpose Utility Library
 License:        LGPL-2.1+
 Group:          Base/Libraries
 Url:            http://www.gtk.org/
-Source:         http://download.gnome.org/sources/glib/2.32/%{name}-%{version}.tar.xz
+Source:         http://download.gnome.org/sources/glib/%{baseline}/%{name}-%{version}.tar.xz
 Source1:        glib2.sh
 Source2:        glib2.csh
 # Not upstream file. Only proposes upstream packages:
@@ -252,6 +253,7 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %{_bindir}/glib-compile-schemas
 %{_bindir}/gresource
 %{_bindir}/gsettings
+%{_bindir}/gapplication
 # We put those files here, but they don't really belong here. They just don't
 # have a better home... The zzz-glib2 scripts could arguably be in
 # libglib but that would break the shared library policy.
