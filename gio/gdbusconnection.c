@@ -1,6 +1,7 @@
 /* GDBus - GLib D-Bus Library
  *
  * Copyright (C) 2008-2010 Red Hat, Inc.
+ * Copyright (C) 2013 Samsung Electronics
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +18,9 @@
  * Free Software Foundation, Inc., 59 Temple Place, Suite 330,
  * Boston, MA 02111-1307, USA.
  *
- * Author: David Zeuthen <davidz@redhat.com>
+ * Author: David Zeuthen        <davidz@redhat.com>
+ * Author: Lukasz Skalski       <l.skalski@samsung.com>
+ * Author: Michal Eljasiewicz   <m.eljasiewic@samsung.com>
  */
 
 /*
@@ -128,6 +131,7 @@
 #include "gsimpleasyncresult.h"
 
 #ifdef G_OS_UNIX
+#include "gkdbusconnection.h"
 #include "gunixconnection.h"
 #include "gunixfdmessage.h"
 #endif
@@ -1647,6 +1651,21 @@ g_dbus_connection_send_message_unlocked (GDBusConnection   *connection,
                        error))
     goto out;
 
+  /* [KDBUS]
+   * Setting protocol version, before invoking g_dbus_message_to_blob() will
+   * be removed after preparing new function only for kdbus transport purposes
+   * (this function will be able to create blob directly/unconditionally in memfd
+   * object, without making copy), but memfd will be completly reworked soon [1],
+   * so we're still waiting for this:
+   *
+   * [1] https://code.google.com/p/d-bus/source/browse/TODO
+   */
+
+  if (G_IS_KDBUS_CONNECTION (connection->stream))
+    _g_dbus_message_set_protocol_ver (message,2);
+  else
+    _g_dbus_message_set_protocol_ver (message,1);
+
   blob = g_dbus_message_to_blob (message,
                                  &blob_size,
                                  connection->capabilities,
@@ -2500,10 +2519,17 @@ get_offered_capabilities_max (GDBusConnection *connection)
 {
       GDBusCapabilityFlags ret;
       ret = G_DBUS_CAPABILITY_FLAGS_NONE;
+
 #ifdef G_OS_UNIX
       if (G_IS_UNIX_CONNECTION (connection->stream))
         ret |= G_DBUS_CAPABILITY_FLAGS_UNIX_FD_PASSING;
-#endif
+
+#ifdef KDBUS_TRANSPORT
+      if (G_IS_KDBUS_CONNECTION (connection->stream))
+        ret |= G_DBUS_CAPABILITY_FLAGS_UNIX_FD_PASSING;
+#endif /* KDBUS_TRANSPORT */
+
+#endif /* G_OS_UNIX */
       return ret;
 }
 
@@ -2579,6 +2605,13 @@ initable_init (GInitable     *initable,
       g_assert_not_reached ();
     }
 
+  /* [KDBUS] Skip authentication process for kdbus transport */
+  if (G_IS_KDBUS_CONNECTION (connection->stream))
+    {
+      connection->capabilities = get_offered_capabilities_max (connection);
+      goto authenticated;
+    }
+
   /* Authenticate the connection */
   if (connection->flags & G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_SERVER)
     {
@@ -2616,6 +2649,8 @@ initable_init (GInitable     *initable,
       g_object_unref (connection->authentication_observer);
       connection->authentication_observer = NULL;
     }
+
+authenticated:
 
   //g_output_stream_flush (G_SOCKET_CONNECTION (connection->stream)
 
@@ -3690,7 +3725,7 @@ emit_signal_instance_in_idle_cb (gpointer data)
     }
   else
     {
-      g_variant_ref_sink (parameters);
+      g_variant_ref (parameters);
     }
 
 #if 0

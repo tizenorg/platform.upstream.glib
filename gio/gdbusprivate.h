@@ -81,6 +81,10 @@ void         _g_dbus_worker_close        (GDBusWorker         *worker,
                                           GCancellable        *cancellable,
                                           GSimpleAsyncResult  *result);
 
+/* kdbus transport needs this function to generate local messages */
+void         _g_dbus_worker_queue_or_deliver_received_message    (GDBusWorker   *worker,
+                                                                  GDBusMessage  *message);
+
 /* ---------------------------------------------------------------------------------------------------- */
 
 void _g_dbus_initialize (void);
