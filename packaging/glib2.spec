@@ -1,5 +1,6 @@
 %define with_systemtap 0
 %define keepstatic 1
+%define baseline 2.36
 
 Name:           glib2
 Version:        2.36.4
@@ -9,7 +10,7 @@ Summary:        General-Purpose Utility Library
 License:        LGPL-2.1+
 Group:          Base/Libraries
 Url:            http://www.gtk.org/
-Source:         http://download.gnome.org/sources/glib/2.32/%{name}-%{version}.tar.xz
+Source:         http://download.gnome.org/sources/glib/%{baseline}/%{name}-%{version}.tar.xz
 Source1:        glib2.sh
 Source2:        glib2.csh
 # Not upstream file. Only proposes upstream packages:
@@ -19,7 +20,7 @@ Source6:        macros.glib2
 # Please update this file from the latest gtk-doc package:
 Source7:        gtk-doc.m4
 Source99:       baselibs.conf
-Source1001: 	glib2.manifest
+Source1001:     glib2.manifest
 BuildRequires:  automake
 BuildRequires:  fdupes
 BuildRequires:  gcc-c++
@@ -52,10 +53,10 @@ a main loop abstraction, and so on.
 
 %package -n gio-branding-upstream
 Summary:        Upstream definitions of default settings and applications
-Requires:       libgio = %{version}
-Provides:       %{name}-branding-upstream = %{version}
-Obsoletes:      %{name}-branding-upstream < %{version}
-Provides:       gio-branding = %{version}
+Requires:       libgio = %{version}-%{release}-%{release}
+Provides:       %{name}-branding-upstream = %{version}-%{release}
+Obsoletes:      %{name}-branding-upstream < %{version}-%{release}
+Provides:       gio-branding = %{version}-%{release}
 Conflicts:      otherproviders(gio-branding)
 Supplements:    packageand(libgio:branding-upstream)
 BuildArch:      noarch
@@ -76,16 +77,16 @@ GSettings and applications used by the MIME system.
 
 %package devel
 #'
-Requires:       %{name} = %{version}
+Requires:       %{name} = %{version}-%{release}
 Requires:       glibc-devel
 Requires:       pkg-config
 # Now require the subpackages too
-Requires:       glib2-tools = %{version}
-Requires:       libgio = %{version}
-Requires:       libglib = %{version}
-Requires:       libgmodule = %{version}
-Requires:       libgobject = %{version}
-Requires:       libgthread = %{version}
+Requires:       glib2-tools = %{version}-%{release}
+Requires:       libgio = %{version}-%{release}
+Requires:       libglib = %{version}-%{release}
+Requires:       libgmodule = %{version}-%{release}
+Requires:       libgobject = %{version}-%{release}
+Requires:       libgthread = %{version}-%{release}
 # Required by gdbus-codegen
 Requires:       python-xml
 Provides:       glib2-doc = 2.19.6
@@ -100,7 +101,7 @@ a main loop abstraction, and so on.
 This package contains the development files for GLib.
 
 %package devel-static
-Requires:       %{name}-devel = %{version}
+Requires:       %{name}-devel = %{version}-%{release}
 Summary:        General-Purpose Utility Library -- Static Libraries
 
 %description devel-static
@@ -112,8 +113,8 @@ This package contains static versions of the GLib libraries.
 
 %package -n libglib
 Summary:        General-Purpose Utility Library
-Provides:       %{name} = %{version}
-Obsoletes:      %{name} < %{version}
+Provides:       %{name} = %{version}-%{release}
+Obsoletes:      %{name} < %{version}-%{release}
 
 %description -n libglib
 GLib is a general-purpose utility library, which provides many useful
@@ -133,12 +134,12 @@ object files (commonly known as 'plug-ins').
 
 %package -n libgio
 Summary:        General-Purpose Utility Library -- Library for VFS
-Requires:       gio-branding = %{version}
+Requires:       gio-branding = %{version}-%{release}
 # bnc#555605: shared-mime-info is required by libgio to properly detect mime types.
 Requires:       shared-mime-info
 # bnc#678518: libgio interacts with others by means of dbus-launch
 #Requires:       dbus-1-x11
-Provides:       gio = %{version}
+Provides:       gio = %{version}-%{release}
 
 %description -n libgio
 GLib is a general-purpose utility library, which provides many useful
@@ -347,5 +348,3 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %manifest %{name}.manifest
 %defattr(-,root,root)
 %{_libdir}/lib*.a
-
-%changelog
