@@ -1,9 +1,9 @@
 %define with_systemtap 0
 %define keepstatic 1
-%define baseline 2.36
+%define baseline 2.38
 
 Name:           glib2
-Version:        2.36.4
+Version:        2.38.2
 Release:        0
 # FIXME: find out if tapsets should really be in devel package or in main package
 Summary:        General-Purpose Utility Library
