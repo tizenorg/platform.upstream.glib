@@ -333,7 +333,11 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %dir %{_libdir}/glib-2.0/
 %{_libdir}/glib-2.0/include/
 %{_libdir}/pkgconfig/*.pc
+%ifarch aarch64
+%{_datadir}/gdb/auto-load/usr/lib/*-gdb.py
+%else
 %{_datadir}/gdb/auto-load/%{_libdir}/*-gdb.py
+%endif
 %if 0%{?with_systemtap}
 %{_datadir}/systemtap/tapset/*.stp
 %endif
@@ -342,7 +346,11 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %dir %{_datadir}/gdb
 %dir %{_datadir}/gdb/auto-load
 %dir %{_datadir}/gdb/auto-load%{_prefix}
+%ifarch aarch64
+%dir %{_datadir}/gdb/auto-load/usr/lib/
+%else
 %dir %{_datadir}/gdb/auto-load%{_libdir}
+%endif
 
 %files devel-static
 %manifest %{name}.manifest
