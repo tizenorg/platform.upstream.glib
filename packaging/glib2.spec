@@ -333,16 +333,12 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %dir %{_libdir}/glib-2.0/
 %{_libdir}/glib-2.0/include/
 %{_libdir}/pkgconfig/*.pc
-%{_datadir}/gdb/auto-load/%{_libdir}/*-gdb.py
 %if 0%{?with_systemtap}
 %{_datadir}/systemtap/tapset/*.stp
 %endif
 %{_sysconfdir}/rpm/macros.glib2
 # Own these directories to not depend on gdb
-%dir %{_datadir}/gdb
-%dir %{_datadir}/gdb/auto-load
-%dir %{_datadir}/gdb/auto-load%{_prefix}
-%dir %{_datadir}/gdb/auto-load%{_libdir}
+%{_datadir}/gdb/*
 
 %files devel-static
 %manifest %{name}.manifest
