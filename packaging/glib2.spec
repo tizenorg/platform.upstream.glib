@@ -3,7 +3,7 @@
 %define keepstatic 1
 
 Name:           glib2
-Version:        2.40.1
+Version:        2.43.1
 Release:        0
 # FIXME: find out if tapsets should really be in devel package or in main package
 Summary:        General-Purpose Utility Library
