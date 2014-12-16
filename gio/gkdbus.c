@@ -147,6 +147,277 @@ const guint8 hash_keys[8][16] =
   {0xf2,0x77,0xe9,0x6f,0x93,0xb5,0x4e,0x71,0x9a,0x0c,0x34,0x88,0x39,0x25,0xbf,0x35}
 };
 
+enum {
+  MATCH_ELEMENT_TYPE,
+  MATCH_ELEMENT_SENDER,
+  MATCH_ELEMENT_INTERFACE,
+  MATCH_ELEMENT_MEMBER,
+  MATCH_ELEMENT_PATH,
+  MATCH_ELEMENT_PATH_NAMESPACE,
+  MATCH_ELEMENT_DESTINATION,
+  MATCH_ELEMENT_ARG0NAMESPACE,
+  MATCH_ELEMENT_EAVESDROP,
+  MATCH_ELEMENT_ARGN,
+  MATCH_ELEMENT_ARGNPATH,
+};
+
+/* MatchElement struct */
+typedef struct {
+  guint16 type;
+  guint16 arg;
+  char *value;
+} MatchElement;
+
+/* Match struct */
+typedef struct {
+  int n_elements;
+  MatchElement *elements;
+} Match;
+
+
+/**
+ * is_key()
+ *
+ */
+static gboolean
+is_key (const char *key_start, const char *key_end, char *value)
+{
+  gsize len = strlen (value);
+
+  if (len != key_end - key_start)
+    return FALSE;
+
+  return strncmp (key_start, value, len) == 0;
+}
+
+
+/**
+ * parse_key()
+ *
+ */
+static gboolean
+parse_key (MatchElement *element, const char *key_start, const char *key_end)
+{
+  gboolean res = TRUE;
+
+  if (is_key (key_start, key_end, "type"))
+    {
+      element->type = MATCH_ELEMENT_TYPE;
+    }
+  else if (is_key (key_start, key_end, "sender"))
+    {
+      element->type = MATCH_ELEMENT_SENDER;
+    }
+  else if (is_key (key_start, key_end, "interface"))
+    {
+      element->type = MATCH_ELEMENT_INTERFACE;
+    }
+  else if (is_key (key_start, key_end, "member"))
+    {
+      element->type = MATCH_ELEMENT_MEMBER;
+    }
+  else if (is_key (key_start, key_end, "path"))
+    {
+      element->type = MATCH_ELEMENT_PATH;
+    }
+  else if (is_key (key_start, key_end, "path_namespace"))
+    {
+      element->type = MATCH_ELEMENT_PATH_NAMESPACE;
+    }
+  else if (is_key (key_start, key_end, "destination"))
+    {
+      element->type = MATCH_ELEMENT_DESTINATION;
+    }
+  else if (is_key (key_start, key_end, "arg0namespace"))
+    {
+      element->type = MATCH_ELEMENT_ARG0NAMESPACE;
+    }
+  else if (is_key (key_start, key_end, "eavesdrop"))
+    {
+      element->type = MATCH_ELEMENT_EAVESDROP;
+    }
+  else if (key_end - key_start > 3 && is_key (key_start, key_start + 3, "arg"))
+    {
+      const char *digits = key_start + 3;
+      const char *end_digits = digits;
+
+      while (end_digits < key_end && g_ascii_isdigit (*end_digits))
+        end_digits++;
+
+      if (end_digits == key_end) /* argN */
+        {
+          element->type = MATCH_ELEMENT_ARGN;
+          element->arg = atoi (digits);
+        }
+      else if (is_key (end_digits, key_end, "path")) /* argNpath */
+        {
+          element->type = MATCH_ELEMENT_ARGNPATH;
+          element->arg = atoi (digits);
+        }
+      else
+        res = FALSE;
+    }
+  else
+    res = FALSE;
+
+  return res;
+}
+
+
+/**
+ * parse_value()
+ *
+ */
+static const char *
+parse_value (MatchElement *element, const char *s)
+{
+  char quote_char;
+  GString *value;
+
+  value = g_string_new ("");
+
+  quote_char = 0;
+
+  for (;*s; s++)
+    {
+      if (quote_char == 0)
+        {
+          switch (*s)
+            {
+            case '\'':
+              quote_char = '\'';
+              break;
+
+            case ',':
+              s++;
+              goto out;
+
+            case '\\':
+              quote_char = '\\';
+              break;
+
+            default:
+              g_string_append_c (value, *s);
+              break;
+            }
+        }
+      else if (quote_char == '\\')
+        {
+          /* \ only counts as an escape if escaping a quote mark */
+          if (*s != '\'')
+            g_string_append_c (value, '\\');
+
+          g_string_append_c (value, *s);
+          quote_char = 0;
+        }
+      else /* quote_char == ' */
+        {
+          if (*s == '\'')
+            quote_char = 0;
+          else
+            g_string_append_c (value, *s);
+        }
+    }
+
+ out:
+  if (quote_char == '\\')
+    g_string_append_c (value, '\\');
+  else if (quote_char == '\'')
+    {
+      g_string_free (value, TRUE);
+      return NULL;
+    }
+
+  element->value = g_string_free (value, FALSE);
+  return s;
+}
+
+
+/**
+ * match_new()
+ *
+ */
+static Match *
+match_new (const char *str)
+{
+  Match *match;
+  GArray *elements;
+  const char *p;
+  const char *key_start;
+  const char *key_end;
+  MatchElement element;
+  int i;
+
+  elements = g_array_new (TRUE, TRUE, sizeof (MatchElement));
+
+  p = str;
+
+  while (*p != 0)
+    {
+      memset (&element, 0, sizeof (element));
+
+      /* Skip initial whitespace */
+      while (*p && g_ascii_isspace (*p))
+        p++;
+
+      key_start = p;
+
+      /* Read non-whitespace non-equals chars */
+      while (*p && *p != '=' && !g_ascii_isspace (*p))
+        p++;
+
+      key_end = p;
+
+      /* Skip any whitespace after key */
+      while (*p && g_ascii_isspace (*p))
+        p++;
+
+      if (key_start == key_end)
+        continue; /* Allow trailing whitespace */
+      if (*p != '=')
+        goto error;
+
+      ++p;
+
+      if (!parse_key (&element, key_start, key_end))
+        goto error;
+
+      p = parse_value (&element, p);
+      if (p == NULL)
+        goto error;
+
+      g_array_append_val (elements, element);
+    }
+
+  match = g_new0 (Match, 1);
+  match->n_elements = elements->len;
+  match->elements = (MatchElement *)g_array_free (elements, FALSE);
+
+  return match;
+
+ error:
+  for (i = 0; i < elements->len; i++)
+    g_free (g_array_index (elements, MatchElement, i).value);
+  g_array_free (elements, TRUE);
+  return NULL;
+}
+
+
+/**
+ * match_free()
+ *
+ */
+static void
+match_free (Match *match)
+{
+  int i;
+  for (i = 0; i < match->n_elements; i++)
+    g_free (match->elements[i].value);
+  g_free (match->elements);
+  g_free (match);
+}
+
+
 /**
  * g_kdbus_finalize:
  *
@@ -906,12 +1177,250 @@ _g_kdbus_GetConnectionUnixUser (GKDBusWorker  *worker,
 
 
 /**
- * _g_kdbus_match_remove:
+ * g_kdbus_bloom_add_data:
+ * Based on bus-bloom.c from systemd
+ * http://cgit.freedesktop.org/systemd/systemd/tree/src/libsystemd/sd-bus/bus-bloom.c
+ */
+static void
+g_kdbus_bloom_add_data (GKDBusWorker  *worker,
+                        guint64        bloom_data [],
+                        const void    *data,
+                        gsize          n)
+{
+  guint8 hash[8];
+  guint64 bit_num;
+  guint bytes_num = 0;
+  guint cnt_1, cnt_2;
+
+  guint c = 0;
+  guint64 p = 0;
+
+  bit_num = worker->bloom_size * 8;
+
+  if (bit_num > 1)
+    bytes_num = ((__builtin_clzll(bit_num) ^ 63U) + 7) / 8;
+
+  for (cnt_1 = 0; cnt_1 < (worker->bloom_n_hash); cnt_1++)
+    {
+      for (cnt_2 = 0; cnt_2 < bytes_num; cnt_2++)
+        {
+          if (c <= 0)
+            {
+              g_siphash24(hash, data, n, hash_keys[cnt_1++]);
+              c += 8;
+            }
+
+          p = (p << 8ULL) | (guint64) hash[8 - c];
+          c--;
+        }
+
+      p &= bit_num - 1;
+      bloom_data[p >> 6] |= 1ULL << (p & 63);
+    }
+}
+
+
+/**
+ * g_kdbus_bloom_add_pair:
  *
  */
 static void
-_g_kdbus_match_remove (GKDBusWorker  *worker,
-                       guint             cookie)
+g_kdbus_bloom_add_pair (GKDBusWorker  *worker,
+                        guint64        bloom_data [],
+                        const gchar   *parameter,
+                        const gchar   *value)
+{
+  gchar buf[1024];
+  gsize size;
+
+  size = strlen(parameter) + strlen(value) + 1;
+  if (size > 1024)
+    return;
+
+  strcpy(stpcpy(stpcpy(buf, parameter), ":"), value);
+  g_kdbus_bloom_add_data(worker, bloom_data, buf, size);
+}
+
+
+/**
+ * g_kdbus_bloom_add_prefixes:
+ *
+ */
+static void
+g_kdbus_bloom_add_prefixes (GKDBusWorker  *worker,
+                            guint64        bloom_data [],
+                            const gchar   *parameter,
+                            const gchar   *value,
+                            gchar          separator)
+{
+  gchar buf[1024];
+  gsize size;
+
+  size = strlen(parameter) + strlen(value) + 1;
+  if (size > 1024)
+    return;
+
+  strcpy(stpcpy(stpcpy(buf, parameter), ":"), value);
+
+  for (;;)
+    {
+      gchar *last_sep;
+      last_sep = strrchr(buf, separator);
+      if (!last_sep || last_sep == buf)
+        break;
+
+      *last_sep = 0;
+      g_kdbus_bloom_add_data(worker, bloom_data, buf, last_sep-buf);
+    }
+}
+
+
+/**
+ * _g_kdbus_AddMatch:
+ *
+ */
+void
+_g_kdbus_AddMatch (GKDBusWorker  *worker,
+                   const gchar   *match_rule,
+                   guint          cookie)
+{
+  Match *match;
+  MatchElement *element;
+  const gchar *sender_name;
+  gsize sender_len, size;
+  struct kdbus_cmd_match *cmd_match;
+  struct kdbus_item *item;
+  guint64 *bloom;
+  guint64 src_id;
+  gchar *type;
+  gint cnt, ret;
+
+  if (match_rule[0] == '-')
+    return;
+
+  match = match_new (match_rule);
+  if (!match)
+    {
+      match_free (match);
+      return;
+    }
+
+  sender_name = NULL;
+  src_id = KDBUS_MATCH_ID_ANY;
+
+  bloom = g_alloca0 (worker->bloom_size);
+  size = KDBUS_ALIGN8 (G_STRUCT_OFFSET (struct kdbus_cmd_match, items));
+  match = match_new (match_rule);
+
+  for (cnt = 0; cnt < match->n_elements; cnt++)
+    {
+      element = &match->elements[cnt];
+      switch (element->type)
+        {
+          case MATCH_ELEMENT_SENDER:
+            if (g_dbus_is_unique_name(element->value))
+              {
+                src_id = g_ascii_strtoull ((element->value)+3, NULL, 10);
+                size += KDBUS_ALIGN8 (G_STRUCT_OFFSET (struct kdbus_item, id) + sizeof(src_id));
+              }
+            else if (g_dbus_is_name (element->value))
+              {
+                sender_name = element->value;
+                sender_len = strlen(element->value) + 1;
+                size += KDBUS_ALIGN8 (G_STRUCT_OFFSET (struct kdbus_item, str) + sender_len);
+              }
+            else
+              {
+                g_critical ("Error while adding a match: %d", cookie);
+                match_free (match);
+                return;
+              }
+            break;
+
+          case MATCH_ELEMENT_TYPE:
+            g_kdbus_bloom_add_pair (worker, bloom, "message-type", element->value);
+            break;
+
+          case MATCH_ELEMENT_INTERFACE:
+            g_kdbus_bloom_add_pair (worker, bloom, "interface", element->value);
+            break;
+
+          case MATCH_ELEMENT_MEMBER:
+            g_kdbus_bloom_add_pair (worker, bloom, "member", element->value);
+            break;
+
+          case MATCH_ELEMENT_PATH:
+            g_kdbus_bloom_add_pair (worker, bloom, "path", element->value);
+            break;
+
+          case MATCH_ELEMENT_PATH_NAMESPACE:
+            if (g_strcmp0 (element->value, "/"))
+              g_kdbus_bloom_add_pair (worker, bloom, "path-slash-prefix", element->value);
+            break;
+
+          case MATCH_ELEMENT_ARGN:
+            asprintf (&type, "arg%u", element->arg);
+            g_kdbus_bloom_add_pair (worker, bloom, type, element->value);
+            free (type);
+            break;
+
+          case MATCH_ELEMENT_ARGNPATH:
+            asprintf (&type, "arg%u-slash-prefix", element->arg);
+            g_kdbus_bloom_add_pair (worker, bloom, type, element->value);
+            free (type);
+            break;
+
+          case MATCH_ELEMENT_ARG0NAMESPACE:
+            g_kdbus_bloom_add_pair (worker, bloom, "arg0-dot-prefix", element->value);
+            break;
+
+          case MATCH_ELEMENT_DESTINATION:
+          case MATCH_ELEMENT_EAVESDROP:
+            break;
+        }
+    }
+
+  size += KDBUS_ALIGN8 (G_STRUCT_OFFSET (struct kdbus_item, data64) + worker->bloom_size);
+  cmd_match = g_alloca0 (size);
+  cmd_match->size = size;
+  cmd_match->cookie = cookie;
+
+  item = cmd_match->items;
+  item->size = G_STRUCT_OFFSET(struct kdbus_item, data64) + worker->bloom_size;
+  item->type = KDBUS_ITEM_BLOOM_MASK;
+  memcpy(item->data64, bloom, worker->bloom_size);
+  item = KDBUS_ITEM_NEXT(item);
+
+  if (src_id != KDBUS_MATCH_ID_ANY)
+    {
+      item->size = G_STRUCT_OFFSET (struct kdbus_item, id) + sizeof(src_id);
+      item->type = KDBUS_ITEM_ID;
+      item->id = src_id;
+      item = KDBUS_ITEM_NEXT(item);
+    }
+
+  if (sender_name)
+    {
+      item->size = G_STRUCT_OFFSET (struct kdbus_item, str) + sender_len;
+      item->type = KDBUS_ITEM_NAME;
+      memcpy (item->str, sender_name, sender_len);
+    }
+
+  ret = ioctl(worker->fd, KDBUS_CMD_MATCH_ADD, cmd_match);
+  if (ret < 0)
+    g_critical ("Error while adding a match: %d", cookie);
+
+  match_free (match);
+}
+
+
+/**
+ * _g_kdbus_RemoveMatch:
+ *
+ */
+void
+_g_kdbus_RemoveMatch (GKDBusWorker  *worker,
+                      guint          cookie)
 {
   struct kdbus_cmd_match cmd_match = {};
   gint ret;
@@ -921,7 +1430,7 @@ _g_kdbus_match_remove (GKDBusWorker  *worker,
 
   ret = ioctl(worker->fd, KDBUS_CMD_MATCH_REMOVE, &cmd_match);
   if (ret < 0)
-    g_warning ("ERROR - %d\n", (int) errno);
+    g_warning ("Error while removing a match: %d\n", (int) errno);
 }
 
 
@@ -1091,7 +1600,7 @@ _g_kdbus_unsubscribe_name_acquired (GKDBusWorker  *worker)
   guint64 cookie;
 
   cookie = 0xbeefbeefbeefbeef;
-  _g_kdbus_match_remove (worker, cookie);
+  _g_kdbus_RemoveMatch (worker, cookie);
 }
 
 
@@ -1105,7 +1614,7 @@ _g_kdbus_unsubscribe_name_lost (GKDBusWorker  *worker)
   guint64 cookie;
 
   cookie = 0xdeafdeafdeafdeaf;
-  _g_kdbus_match_remove (worker, cookie);
+  _g_kdbus_RemoveMatch (worker, cookie);
 }
 
 
@@ -1128,97 +1637,6 @@ g_kdbus_append_bloom (struct kdbus_item **item,
 
   *item = KDBUS_ITEM_NEXT(bloom_item);
   return &bloom_item->bloom_filter;
-}
-
-
-/**
- * g_kdbus_bloom_add_data:
- * Based on bus-bloom.c from systemd
- * http://cgit.freedesktop.org/systemd/systemd/tree/src/libsystemd/sd-bus/bus-bloom.c
- */
-static void
-g_kdbus_bloom_add_data (GKDBusWorker      *worker,
-                        guint64      bloom_data [],
-                        const void  *data,
-                        gsize        n)
-{
-  guint8 hash[8];
-  guint64 bit_num;
-  guint bytes_num = 0;
-  guint cnt_1, cnt_2;
-
-  guint c = 0;
-  guint64 p = 0;
-
-  bit_num = worker->bloom_size * 8;
-
-  if (bit_num > 1)
-    bytes_num = ((__builtin_clzll(bit_num) ^ 63U) + 7) / 8;
-
-  for (cnt_1 = 0; cnt_1 < (worker->bloom_n_hash); cnt_1++)
-    {
-      for (cnt_2 = 0; cnt_2 < bytes_num; cnt_2++)
-        {
-          if (c <= 0)
-            {
-              g_siphash24(hash, data, n, hash_keys[cnt_1++]);
-              c += 8;
-            }
-
-          p = (p << 8ULL) | (guint64) hash[8 - c];
-          c--;
-        }
-
-      p &= bit_num - 1;
-      bloom_data[p >> 6] |= 1ULL << (p & 63);
-    }
-}
-
-
-/**
- * g_kdbus_bloom_add_pair:
- *
- */
-static void
-g_kdbus_bloom_add_pair (GKDBusWorker       *worker,
-                        guint64       bloom_data [],
-                        const gchar  *parameter,
-                        const gchar  *value)
-{
-  GString *data = g_string_new (NULL);
-
-  g_string_printf (data,"%s:%s",parameter,value);
-  g_kdbus_bloom_add_data(worker, bloom_data, data->str, data->len);
-  g_string_free (data, TRUE);
-}
-
-
-/**
- * g_kdbus_bloom_add_prefixes:
- *
- */
-static void
-g_kdbus_bloom_add_prefixes (GKDBusWorker       *worker,
-                            guint64       bloom_data [],
-                            const gchar  *parameter,
-                            const gchar  *value,
-                            gchar         separator)
-{
-  GString *data = g_string_new (NULL);
-
-  g_string_printf (data,"%s:%s",parameter,value);
-
-  for (;;)
-    {
-      gchar *last_sep;
-      last_sep = strrchr(data->str, separator);
-      if (!last_sep || last_sep == data->str)
-        break;
-
-      *last_sep = 0;
-      g_kdbus_bloom_add_data(worker, bloom_data, data->str, last_sep-(data->str));
-    }
-  g_string_free (data, TRUE);
 }
 
 

@@ -4058,7 +4058,10 @@ g_dbus_connection_signal_subscribe (GDBusConnection     *connection,
   if (connection->flags & G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION)
     {
       if (!is_signal_data_for_name_lost_or_acquired (signal_data))
-        add_match_rule (connection, signal_data->rule);
+        if (connection->kdbus_worker)
+          _g_kdbus_AddMatch (connection->kdbus_worker, signal_data->rule, subscriber.id);
+        else
+          add_match_rule (connection, signal_data->rule);
       else
         {
           if (connection->kdbus_worker)
@@ -4153,7 +4156,10 @@ unsubscribe_id_internal (GDBusConnection *connection,
                * so on_worker_closed() can't happen between the check we just
                * did, and releasing the lock later.
                */
-              remove_match_rule (connection, signal_data->rule);
+              if (connection->kdbus_worker)
+                _g_kdbus_RemoveMatch (connection->kdbus_worker, subscription_id);
+              else
+                remove_match_rule (connection, signal_data->rule);
             }
           else
             {

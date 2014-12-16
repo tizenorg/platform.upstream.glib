@@ -115,6 +115,13 @@ GVariant *                              _g_kdbus_GetConnectionUnixUser      (GKD
                                                                              const gchar      *name,
                                                                              GError          **error);
 
+void                                    _g_kdbus_AddMatch                   (GKDBusWorker     *worker,
+                                                                             const gchar      *match_rule,
+                                                                             guint             cookie);
+
+void                                    _g_kdbus_RemoveMatch                (GKDBusWorker     *worker,
+                                                                             guint             cookie);
+
 void                                    _g_kdbus_subscribe_name_acquired    (GKDBusWorker  *worker,
                                                                              const gchar      *name);
 
