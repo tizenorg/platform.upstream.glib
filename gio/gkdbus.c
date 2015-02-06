@@ -65,6 +65,11 @@
         for (item = (head)->first;                               \
              (guint8 *)(item) < (guint8 *)(head) + (head)->size; \
              item = KDBUS_ITEM_NEXT(item))
+#define KDBUS_FOREACH(iter, first, _size)                             \
+        for (iter = (first);                                          \
+             ((guint8 *)(iter) < (guint8 *)(first) + (_size)) &&      \
+               ((guint8 *)(iter) >= (guint8 *)(first));               \
+             iter = (void*)(((guint8 *)iter) + KDBUS_ALIGN8((iter)->size)))
 
 #define g_alloca0(x) memset(g_alloca(x), '\0', (x))
 
@@ -662,7 +667,7 @@ _g_kdbus_RequestName (GKDBusWorker        *worker,
                       GError             **error)
 {
   GVariant *result;
-  struct kdbus_cmd_name *kdbus_name;
+  struct kdbus_cmd *kdbus_name;
   guint64 kdbus_flags;
   gssize len, size;
   gint status, ret;
@@ -690,7 +695,7 @@ _g_kdbus_RequestName (GKDBusWorker        *worker,
   g_kdbus_translate_nameowner_flags (flags, &kdbus_flags);
 
   len = strlen(name) + 1;
-  size = G_STRUCT_OFFSET (struct kdbus_cmd_name, items) + KDBUS_ITEM_SIZE(len);
+  size = G_STRUCT_OFFSET (struct kdbus_cmd, items) + KDBUS_ITEM_SIZE(len);
   kdbus_name = g_alloca0 (size);
   kdbus_name->size = size;
   kdbus_name->items[0].size = KDBUS_ITEM_HEADER_SIZE + len;
@@ -734,7 +739,7 @@ _g_kdbus_ReleaseName (GKDBusWorker     *worker,
                       GError             **error)
 {
   GVariant *result;
-  struct kdbus_cmd_name *kdbus_name;
+  struct kdbus_cmd *kdbus_name;
   gssize len, size;
   gint status, ret;
 
@@ -759,7 +764,7 @@ _g_kdbus_ReleaseName (GKDBusWorker     *worker,
     }
 
   len = strlen(name) + 1;
-  size = G_STRUCT_OFFSET (struct kdbus_cmd_name, items) + KDBUS_ITEM_SIZE(len);
+  size = G_STRUCT_OFFSET (struct kdbus_cmd, items) + KDBUS_ITEM_SIZE(len);
   kdbus_name = g_alloca0 (size);
   kdbus_name->size = size;
   kdbus_name->items[0].size = KDBUS_ITEM_HEADER_SIZE + len;
@@ -825,9 +830,8 @@ _g_kdbus_GetListNames (GKDBusWorker  *worker,
   GVariant *result;
   GVariantBuilder *builder;
 
-  struct kdbus_cmd_name_list cmd = {};
-  struct kdbus_name_list *name_list;
-  struct kdbus_name_info *name;
+  struct kdbus_cmd_list cmd = {};
+  struct kdbus_info *name_list, *name;
 
   guint64 prev_id;
   gint ret;
@@ -835,11 +839,12 @@ _g_kdbus_GetListNames (GKDBusWorker  *worker,
   prev_id = 0;
 
   if (list_name_type)
-    cmd.flags = KDBUS_NAME_LIST_ACTIVATORS;                     /* ListActivatableNames */
+    cmd.flags = KDBUS_LIST_ACTIVATORS;                /* ListActivatableNames */
   else
-    cmd.flags = KDBUS_NAME_LIST_UNIQUE | KDBUS_NAME_LIST_NAMES; /* ListNames */
+    cmd.flags = KDBUS_LIST_UNIQUE | KDBUS_LIST_NAMES; /* ListNames */
 
-  ret = ioctl(worker->fd, KDBUS_CMD_NAME_LIST, &cmd);
+  cmd.size = sizeof(cmd);
+  ret = ioctl(worker->fd, KDBUS_CMD_LIST, &cmd);
   if (ret < 0)
     {
       g_set_error (error,
@@ -849,23 +854,23 @@ _g_kdbus_GetListNames (GKDBusWorker  *worker,
       return NULL;
     }
 
-  name_list = (struct kdbus_name_list *) ((guint8 *) worker->kdbus_buffer + cmd.offset);
+  name_list = (struct kdbus_info *) ((guint8 *) worker->kdbus_buffer + cmd.offset);
   builder = g_variant_builder_new (G_VARIANT_TYPE ("as"));
 
-  KDBUS_ITEM_FOREACH(name, name_list, names)
+  KDBUS_FOREACH(name, name_list, cmd.list_size)
     {
       struct kdbus_item *item;
       const gchar *item_name = "";
 
-      if ((cmd.flags & KDBUS_NAME_LIST_UNIQUE) && name->owner_id != prev_id)
+      if ((cmd.flags & KDBUS_LIST_UNIQUE) && name->id != prev_id)
         {
           GString *unique_name;
 
           unique_name = g_string_new (NULL);
-          g_string_printf (unique_name, ":1.%llu", name->owner_id);
+          g_string_printf (unique_name, ":1.%llu", name->id);
           g_variant_builder_add (builder, "s", unique_name->str);
           g_string_free (unique_name,TRUE);
-          prev_id = name->owner_id;
+          prev_id = name->id;
         }
 
        KDBUS_ITEM_FOREACH(item, name, items)
@@ -930,17 +935,19 @@ g_kdbus_NameHasOwner_internal (GKDBusWorker       *worker,
  */
 GVariant *
 _g_kdbus_GetListQueuedOwners (GKDBusWorker  *worker,
-                              const gchar      *name,
-                              GError          **error)
+                              const gchar   *name,
+                              GError       **error)
 {
   GVariant *result;
   GVariantBuilder *builder;
   GString *unique_name;
   gint ret;
 
-  struct kdbus_cmd_name_list cmd = {};
-  struct kdbus_name_list *name_list;
-  struct kdbus_name_info *kname;
+  struct kdbus_cmd_list cmd = {};
+  struct kdbus_info *name_list, *kname;
+
+  /* TODO */
+  g_error ("TODO");
 
   if (!g_dbus_is_name (name))
     {
@@ -960,8 +967,9 @@ _g_kdbus_GetListQueuedOwners (GKDBusWorker  *worker,
       return NULL;
     }
 
-  cmd.flags = KDBUS_NAME_LIST_QUEUED;
-  ret = ioctl(worker->fd, KDBUS_CMD_NAME_LIST, &cmd);
+  cmd.flags = KDBUS_LIST_QUEUED;
+  cmd.size = sizeof(cmd);
+  ret = ioctl(worker->fd, KDBUS_CMD_LIST, &cmd);
   if (ret < 0)
     {
       g_set_error (error,
@@ -971,11 +979,11 @@ _g_kdbus_GetListQueuedOwners (GKDBusWorker  *worker,
       return NULL;
     }
 
-  name_list = (struct kdbus_name_list *) ((guint8 *) worker->kdbus_buffer + cmd.offset);
+  name_list = (struct kdbus_info *) ((guint8 *) worker->kdbus_buffer + cmd.offset);
 
   unique_name = g_string_new (NULL);
   builder = g_variant_builder_new (G_VARIANT_TYPE ("as"));
-  KDBUS_ITEM_FOREACH(kname, name_list, names)
+  KDBUS_FOREACH(kname, name_list, cmd.list_size)
     {
       struct kdbus_item *item;
       const char *item_name = "";
@@ -987,7 +995,7 @@ _g_kdbus_GetListQueuedOwners (GKDBusWorker  *worker,
       if (strcmp(item_name, name))
         continue;
 
-      g_string_printf (unique_name, ":1.%llu", kname->owner_id);
+      g_string_printf (unique_name, ":1.%llu", kname->id);
       g_variant_builder_add (builder, "s", item_name);
     }
 
@@ -2044,7 +2052,7 @@ again:
 
     g_print ("but sometimes that's okay\n");
 
-   msg = (struct kdbus_msg *)((guint8 *)kdbus->kdbus_buffer + recv.reply.offset);
+   msg = (struct kdbus_msg *)((guint8 *)kdbus->kdbus_buffer + recv.msg.offset);
 
    if (msg->payload_type == KDBUS_PAYLOAD_DBUS)
      g_kdbus_decode_dbus_msg (kdbus, msg);
@@ -2059,7 +2067,7 @@ again:
        return -1;
      }
 
-  ioctl(kdbus->fd, KDBUS_CMD_FREE, &recv.reply.offset);
+  ioctl(kdbus->fd, KDBUS_CMD_FREE, &recv.msg.offset);
 
    return 0;
 }
