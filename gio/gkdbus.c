@@ -506,9 +506,10 @@ static gboolean
 g_kdbus_free_data (GKDBusWorker      *kdbus,
                    guint64      offset)
 {
-  struct kdbus_cmd_free cmd;
+  struct kdbus_cmd_free cmd = {};
   int ret;
 
+  cmd.size = sizeof(cmd);
   cmd.offset = offset;
   cmd.flags = 0;
 
@@ -945,9 +946,6 @@ _g_kdbus_GetListQueuedOwners (GKDBusWorker  *worker,
 
   struct kdbus_cmd_list cmd = {};
   struct kdbus_info *name_list, *kname;
-
-  /* TODO */
-  g_error ("TODO");
 
   if (!g_dbus_is_name (name))
     {
