@@ -506,12 +506,12 @@ static gboolean
 g_kdbus_free_data (GKDBusWorker      *kdbus,
                    guint64      offset)
 {
-  struct kdbus_cmd_free cmd = {};
+  struct kdbus_cmd_free cmd = {
+    .size = sizeof(cmd),
+    .offset = offset,
+    .flags = 0
+  };
   int ret;
-
-  cmd.size = sizeof(cmd);
-  cmd.offset = offset;
-  cmd.flags = 0;
 
   ret = ioctl (kdbus->fd, KDBUS_CMD_FREE, &cmd);
   if (ret < 0)
@@ -591,7 +591,7 @@ GVariant *
 _g_kdbus_Hello (GKDBusWorker *worker,
                 GError    **error)
 {
-  struct kdbus_cmd_hello *hello;
+  struct kdbus_cmd_hello *cmd;
   struct kdbus_item *item;
 
   gchar *conn_name;
@@ -603,20 +603,20 @@ _g_kdbus_Hello (GKDBusWorker *worker,
   size = KDBUS_ALIGN8 (G_STRUCT_OFFSET (struct kdbus_cmd_hello, items)) +
          KDBUS_ALIGN8 (G_STRUCT_OFFSET (struct kdbus_item, str) + conn_name_size + 1);
 
-  hello = g_alloca0 (size);
-  hello->flags = worker->flags;
-  hello->attach_flags_send = worker->attach_flags_send;
-  hello->attach_flags_recv = worker->attach_flags_recv;
-  hello->size = size;
-  hello->pool_size = KDBUS_POOL_SIZE;
+  cmd = g_alloca0 (size);
+  cmd->flags = worker->flags;
+  cmd->attach_flags_send = worker->attach_flags_send;
+  cmd->attach_flags_recv = worker->attach_flags_recv;
+  cmd->size = size;
+  cmd->pool_size = KDBUS_POOL_SIZE;
 
-  item = hello->items;
+  item = cmd->items;
   item->size = G_STRUCT_OFFSET (struct kdbus_item, str) + conn_name_size + 1;
   item->type = KDBUS_ITEM_CONN_DESCRIPTION;
   memcpy (item->str, conn_name, conn_name_size+1);
   item = KDBUS_ITEM_NEXT (item);
 
-  if (ioctl(worker->fd, KDBUS_CMD_HELLO, hello))
+  if (ioctl(worker->fd, KDBUS_CMD_HELLO, cmd))
     {
       g_set_error (error, G_IO_ERROR,
                    g_io_error_from_errno (errno),
@@ -635,7 +635,7 @@ _g_kdbus_Hello (GKDBusWorker *worker,
       return NULL;
     }
 
-  if (hello->bus_flags > 0xFFFFFFFFULL)
+  if (cmd->bus_flags > 0xFFFFFFFFULL)
     {
       g_set_error_literal (error,
                            G_IO_ERROR,
@@ -644,14 +644,14 @@ _g_kdbus_Hello (GKDBusWorker *worker,
       return NULL;
     }
 
-  memcpy (worker->bus_id, hello->id128, 16);
+  memcpy (worker->bus_id, cmd->id128, 16);
 
-  worker->unique_id = hello->id;
-  asprintf(&worker->unique_name, ":1.%llu", (unsigned long long) hello->id);
+  worker->unique_id = cmd->id;
+  asprintf(&worker->unique_name, ":1.%llu", (unsigned long long) cmd->id);
 
   /* read bloom filters parameters */
-  //worker->bloom_size = (gsize) hello->bloom.size;
-  //worker->bloom_n_hash = (guint) hello->bloom.n_hash;
+  //worker->bloom_size = (gsize) cmd->bloom.size;
+  //worker->bloom_n_hash = (guint) cmd->bloom.n_hash;
 
   return g_variant_new ("(s)", worker->unique_name);
 }
@@ -668,7 +668,7 @@ _g_kdbus_RequestName (GKDBusWorker        *worker,
                       GError             **error)
 {
   GVariant *result;
-  struct kdbus_cmd *kdbus_name;
+  struct kdbus_cmd *cmd;
   guint64 kdbus_flags;
   gssize len, size;
   gint status, ret;
@@ -697,14 +697,14 @@ _g_kdbus_RequestName (GKDBusWorker        *worker,
 
   len = strlen(name) + 1;
   size = G_STRUCT_OFFSET (struct kdbus_cmd, items) + KDBUS_ITEM_SIZE(len);
-  kdbus_name = g_alloca0 (size);
-  kdbus_name->size = size;
-  kdbus_name->items[0].size = KDBUS_ITEM_HEADER_SIZE + len;
-  kdbus_name->items[0].type = KDBUS_ITEM_NAME;
-  kdbus_name->flags = kdbus_flags;
-  memcpy (kdbus_name->items[0].str, name, len);
+  cmd = g_alloca0 (size);
+  cmd->size = size;
+  cmd->items[0].size = KDBUS_ITEM_HEADER_SIZE + len;
+  cmd->items[0].type = KDBUS_ITEM_NAME;
+  cmd->flags = kdbus_flags;
+  memcpy (cmd->items[0].str, name, len);
 
-  ret = ioctl(worker->fd, KDBUS_CMD_NAME_ACQUIRE, kdbus_name);
+  ret = ioctl(worker->fd, KDBUS_CMD_NAME_ACQUIRE, cmd);
   if (ret < 0)
     {
       if (errno == EEXIST)
@@ -721,7 +721,7 @@ _g_kdbus_RequestName (GKDBusWorker        *worker,
         }
     }
 
-  if (kdbus_name->flags & KDBUS_NAME_IN_QUEUE)
+  if (cmd->flags & KDBUS_NAME_IN_QUEUE)
     status = G_BUS_REQUEST_NAME_FLAGS_IN_QUEUE;
 
   result = g_variant_new ("(u)", status);
@@ -740,7 +740,7 @@ _g_kdbus_ReleaseName (GKDBusWorker     *worker,
                       GError             **error)
 {
   GVariant *result;
-  struct kdbus_cmd *kdbus_name;
+  struct kdbus_cmd *cmd;
   gssize len, size;
   gint status, ret;
 
@@ -766,13 +766,13 @@ _g_kdbus_ReleaseName (GKDBusWorker     *worker,
 
   len = strlen(name) + 1;
   size = G_STRUCT_OFFSET (struct kdbus_cmd, items) + KDBUS_ITEM_SIZE(len);
-  kdbus_name = g_alloca0 (size);
-  kdbus_name->size = size;
-  kdbus_name->items[0].size = KDBUS_ITEM_HEADER_SIZE + len;
-  kdbus_name->items[0].type = KDBUS_ITEM_NAME;
-  memcpy (kdbus_name->items[0].str, name, len);
+  cmd = g_alloca0 (size);
+  cmd->size = size;
+  cmd->items[0].size = KDBUS_ITEM_HEADER_SIZE + len;
+  cmd->items[0].type = KDBUS_ITEM_NAME;
+  memcpy (cmd->items[0].str, name, len);
 
-  ret = ioctl(worker->fd, KDBUS_CMD_NAME_RELEASE, kdbus_name);
+  ret = ioctl(worker->fd, KDBUS_CMD_NAME_RELEASE, cmd);
   if (ret < 0)
     {
       if (errno == ESRCH)
@@ -830,9 +830,10 @@ _g_kdbus_GetListNames (GKDBusWorker  *worker,
 {
   GVariant *result;
   GVariantBuilder *builder;
-
-  struct kdbus_cmd_list cmd = {};
   struct kdbus_info *name_list, *name;
+  struct kdbus_cmd_list cmd = {
+    .size = sizeof(cmd)
+  };
 
   guint64 prev_id;
   gint ret;
@@ -844,7 +845,6 @@ _g_kdbus_GetListNames (GKDBusWorker  *worker,
   else
     cmd.flags = KDBUS_LIST_UNIQUE | KDBUS_LIST_NAMES; /* ListNames */
 
-  cmd.size = sizeof(cmd);
   ret = ioctl(worker->fd, KDBUS_CMD_LIST, &cmd);
   if (ret < 0)
     {
@@ -944,8 +944,11 @@ _g_kdbus_GetListQueuedOwners (GKDBusWorker  *worker,
   GString *unique_name;
   gint ret;
 
-  struct kdbus_cmd_list cmd = {};
   struct kdbus_info *name_list, *kname;
+  struct kdbus_cmd_list cmd = {
+    .size = sizeof(cmd),
+    .flags = KDBUS_LIST_QUEUED
+  };
 
   if (!g_dbus_is_name (name))
     {
@@ -965,8 +968,6 @@ _g_kdbus_GetListQueuedOwners (GKDBusWorker  *worker,
       return NULL;
     }
 
-  cmd.flags = KDBUS_LIST_QUEUED;
-  cmd.size = sizeof(cmd);
   ret = ioctl(worker->fd, KDBUS_CMD_LIST, &cmd);
   if (ret < 0)
     {
@@ -1294,7 +1295,7 @@ _g_kdbus_AddMatch (GKDBusWorker  *worker,
   MatchElement *element;
   const gchar *sender_name;
   gsize sender_len, size;
-  struct kdbus_cmd_match *cmd_match;
+  struct kdbus_cmd_match *cmd;
   struct kdbus_item *item;
   guint64 *bloom;
   guint64 src_id;
@@ -1387,11 +1388,11 @@ _g_kdbus_AddMatch (GKDBusWorker  *worker,
     }
 
   size += KDBUS_ALIGN8 (G_STRUCT_OFFSET (struct kdbus_item, data64) + worker->bloom_size);
-  cmd_match = g_alloca0 (size);
-  cmd_match->size = size;
-  cmd_match->cookie = cookie;
+  cmd = g_alloca0 (size);
+  cmd->size = size;
+  cmd->cookie = cookie;
 
-  item = cmd_match->items;
+  item = cmd->items;
   item->size = G_STRUCT_OFFSET(struct kdbus_item, data64) + worker->bloom_size;
   item->type = KDBUS_ITEM_BLOOM_MASK;
   memcpy(item->data64, bloom, worker->bloom_size);
@@ -1412,7 +1413,7 @@ _g_kdbus_AddMatch (GKDBusWorker  *worker,
       memcpy (item->str, sender_name, sender_len);
     }
 
-  ret = ioctl(worker->fd, KDBUS_CMD_MATCH_ADD, cmd_match);
+  ret = ioctl(worker->fd, KDBUS_CMD_MATCH_ADD, cmd);
   if (ret < 0)
     g_critical ("Error while adding a match: %d", cookie);
 
@@ -1428,13 +1429,13 @@ void
 _g_kdbus_RemoveMatch (GKDBusWorker  *worker,
                       guint          cookie)
 {
-  struct kdbus_cmd_match cmd_match = {};
+  struct kdbus_cmd_match cmd = {
+    .size = sizeof(cmd),
+    .cookie = cookie
+  };
   gint ret;
 
-  cmd_match.size = sizeof (cmd_match);
-  cmd_match.cookie = cookie;
-
-  ret = ioctl(worker->fd, KDBUS_CMD_MATCH_REMOVE, &cmd_match);
+  ret = ioctl(worker->fd, KDBUS_CMD_MATCH_REMOVE, &cmd);
   if (ret < 0)
     g_warning ("Error while removing a match: %d\n", (int) errno);
 }
@@ -1452,7 +1453,7 @@ _g_kdbus_subscribe_name_owner_changed (GKDBusWorker  *worker,
                                        guint             cookie)
 {
   struct kdbus_item *item;
-  struct kdbus_cmd_match *cmd_match;
+  struct kdbus_cmd_match *cmd;
   gssize size, len;
   gint ret;
   guint64 old_id = 0; /* XXX why? */
@@ -1463,10 +1464,10 @@ _g_kdbus_subscribe_name_owner_changed (GKDBusWorker  *worker,
                       G_STRUCT_OFFSET (struct kdbus_item, name_change) +
                       G_STRUCT_OFFSET (struct kdbus_notify_name_change, name) + len);
 
-  cmd_match = g_alloca0 (size);
-  cmd_match->size = size;
-  cmd_match->cookie = cookie;
-  item = cmd_match->items;
+  cmd = g_alloca0 (size);
+  cmd->size = size;
+  cmd->cookie = cookie;
+  item = cmd->items;
 
   if (old_name[0] == 0)
     {
@@ -1492,10 +1493,10 @@ _g_kdbus_subscribe_name_owner_changed (GKDBusWorker  *worker,
         return;
     }
 
-  cmd_match = g_alloca0 (size);
-  cmd_match->size = size;
-  cmd_match->cookie = cookie;
-  item = cmd_match->items;
+  cmd = g_alloca0 (size);
+  cmd->size = size;
+  cmd->cookie = cookie;
+  item = cmd->items;
 
   /* KDBUS_ITEM_NAME_CHANGE */
   item->type = KDBUS_ITEM_NAME_CHANGE;
@@ -1506,7 +1507,7 @@ _g_kdbus_subscribe_name_owner_changed (GKDBusWorker  *worker,
                G_STRUCT_OFFSET(struct kdbus_notify_name_change, name) + len;
   item = KDBUS_ITEM_NEXT(item);
 
-  ret = ioctl(worker->fd, KDBUS_CMD_MATCH_ADD, cmd_match);
+  ret = ioctl(worker->fd, KDBUS_CMD_MATCH_ADD, cmd);
   if (ret < 0)
     g_warning ("ERROR - %d\n", (int) errno);
 }
@@ -1521,7 +1522,7 @@ _g_kdbus_subscribe_name_acquired (GKDBusWorker  *worker,
                                   const gchar      *name)
 {
   struct kdbus_item *item;
-  struct kdbus_cmd_match *cmd_match;
+  struct kdbus_cmd_match *cmd;
   gssize size, len;
   guint64 cookie;
   gint ret;
@@ -1532,10 +1533,10 @@ _g_kdbus_subscribe_name_acquired (GKDBusWorker  *worker,
                       G_STRUCT_OFFSET (struct kdbus_notify_name_change, name) + len);
 
   cookie = 0xbeefbeefbeefbeef;
-  cmd_match = g_alloca0 (size);
-  cmd_match->size = size;
-  cmd_match->cookie = cookie;
-  item = cmd_match->items;
+  cmd = g_alloca0 (size);
+  cmd->size = size;
+  cmd->cookie = cookie;
+  item = cmd->items;
 
   /* KDBUS_ITEM_NAME_ADD */
   item->type = KDBUS_ITEM_NAME_ADD;
@@ -1546,7 +1547,7 @@ _g_kdbus_subscribe_name_acquired (GKDBusWorker  *worker,
                G_STRUCT_OFFSET(struct kdbus_notify_name_change, name) + len;
   item = KDBUS_ITEM_NEXT(item);
 
-  ret = ioctl(worker->fd, KDBUS_CMD_MATCH_ADD, cmd_match);
+  ret = ioctl(worker->fd, KDBUS_CMD_MATCH_ADD, cmd);
   if (ret < 0)
     g_warning ("ERROR - %d\n", (int) errno);
 
@@ -1563,7 +1564,7 @@ _g_kdbus_subscribe_name_lost (GKDBusWorker  *worker,
                               const gchar      *name)
 {
   struct kdbus_item *item;
-  struct kdbus_cmd_match *cmd_match;
+  struct kdbus_cmd_match *cmd;
   gssize size, len;
   guint64 cookie;
   gint ret;
@@ -1574,10 +1575,10 @@ _g_kdbus_subscribe_name_lost (GKDBusWorker  *worker,
                       G_STRUCT_OFFSET (struct kdbus_notify_name_change, name) + len);
 
   cookie = 0xdeafdeafdeafdeaf;
-  cmd_match = g_alloca0 (size);
-  cmd_match->size = size;
-  cmd_match->cookie = cookie;
-  item = cmd_match->items;
+  cmd = g_alloca0 (size);
+  cmd->size = size;
+  cmd->cookie = cookie;
+  item = cmd->items;
 
   /* KDBUS_ITEM_NAME_REMOVE */
   item->type = KDBUS_ITEM_NAME_REMOVE;
@@ -1588,7 +1589,7 @@ _g_kdbus_subscribe_name_lost (GKDBusWorker  *worker,
                G_STRUCT_OFFSET(struct kdbus_notify_name_change, name) + len;
   item = KDBUS_ITEM_NEXT(item);
 
-  ret = ioctl(worker->fd, KDBUS_CMD_MATCH_ADD, cmd_match);
+  ret = ioctl(worker->fd, KDBUS_CMD_MATCH_ADD, cmd);
   if (ret < 0)
     g_warning ("ERROR - %d\n", (int) errno);
 
