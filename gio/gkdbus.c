@@ -1889,7 +1889,7 @@ g_kdbus_decode_dbus_msg (GKDBusWorker           *worker,
             flavour = body_size & 7;
             g_assert ((item->vec.offset & 7) == flavour);
 
-            vector.gbytes = g_bytes_new (((guchar *) worker->kdbus_buffer) + item->vec.offset - flavour, item->vec.size + flavour);
+            vector.gbytes = g_bytes_new (((guchar *) msg) + item->vec.offset - flavour, item->vec.size + flavour);
             vector.data.pointer = g_bytes_get_data (vector.gbytes, NULL);
             vector.data.pointer += flavour;
             vector.size = item->vec.size;
