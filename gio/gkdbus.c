@@ -1061,7 +1061,7 @@ g_kdbus_GetConnInfo_internal (GKDBusWorker  *worker,
        memcpy (cmd->items[0].str, name, len);
     }
 
-  cmd->flags = _KDBUS_ATTACH_ALL;
+  cmd->attach_flags = _KDBUS_ATTACH_ALL;
   cmd->size = size;
 
   ret = ioctl(worker->fd, KDBUS_CMD_CONN_INFO, cmd);
