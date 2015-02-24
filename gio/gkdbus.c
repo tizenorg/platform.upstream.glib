@@ -816,7 +816,7 @@ _g_kdbus_RequestName (GKDBusWorker        *worker,
         }
     }
 
-  if (cmd->flags & KDBUS_NAME_IN_QUEUE)
+  if (cmd->return_flags & KDBUS_NAME_IN_QUEUE)
     status = G_BUS_REQUEST_NAME_FLAGS_IN_QUEUE;
 
   result = g_variant_new ("(u)", status);
