@@ -852,7 +852,7 @@ g_dbus_command_line_get_stdin (GApplicationCommandLine *cmdline)
 
   if (fd_list && g_unix_fd_list_get_length (fd_list))
     {
-      gint *fds, i;
+      const gint *fds;
 
       fds = g_unix_fd_list_peek_fds (fd_list, NULL);
       result = g_unix_input_stream_new (fds[0], FALSE);
