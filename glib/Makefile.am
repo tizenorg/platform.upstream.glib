@@ -159,7 +159,6 @@ libglib_2_0_la_SOURCES = 	\
 	gscripttable.h		\
 	gsequence.c		\
 	gshell.c		\
-	gsiphash.c		\
 	gslice.c		\
 	gslist.c		\
 	gstdio.c		\
@@ -292,7 +291,6 @@ glibsubinclude_HEADERS = \
 	gscanner.h	\
 	gsequence.h	\
 	gshell.h	\
-	gsiphash.h	\
 	gslice.h	\
 	gslist.h	\
 	gspawn.h	\

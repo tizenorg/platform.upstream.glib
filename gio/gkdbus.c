@@ -51,10 +51,11 @@
 #include "glibintl.h"
 #include "gunixfdmessage.h"
 
-#define KDBUS_TIMEOUT_NS 2000000000LU
-#define KDBUS_POOL_SIZE (16 * 1024LU * 1024LU)
-#define KDBUS_ALIGN8(l) (((l) + 7) & ~7)
-#define KDBUS_ALIGN8_PTR(p) ((void*) (uintptr_t)(p))
+#define KDBUS_MSG_MAX_SIZE         8192
+#define KDBUS_TIMEOUT_NS           2000000000LU
+#define KDBUS_POOL_SIZE            (16 * 1024LU * 1024LU)
+#define KDBUS_ALIGN8(l)            (((l) + 7) & ~7)
+#define KDBUS_ALIGN8_PTR(p)        ((void*) (uintptr_t)(p))
 
 #define KDBUS_ITEM_HEADER_SIZE G_STRUCT_OFFSET(struct kdbus_item, data)
 #define KDBUS_ITEM_SIZE(s) KDBUS_ALIGN8((s) + KDBUS_ITEM_HEADER_SIZE)
@@ -86,7 +87,37 @@ struct dbus_fixed_header {
 #define DBUS_EXTENDED_HEADER_TYPE  ((const GVariantType *) "a{tv}")
 #define DBUS_MESSAGE_TYPE          ((const GVariantType *) "((yyyyut)a{tv}v)")
 
-#define KDBUS_MSG_MAX_SIZE         8192
+/*
+ * Macros for SipHash algorithm
+ */
+
+#define ROTL(x,b) (guint64)( ((x) << (b)) | ( (x) >> (64 - (b))) )
+
+#define U32TO8_LE(p, v)         \
+    (p)[0] = (guint8)((v)      ); (p)[1] = (guint8)((v) >>  8); \
+    (p)[2] = (guint8)((v) >> 16); (p)[3] = (guint8)((v) >> 24);
+
+#define U64TO8_LE(p, v)         \
+  U32TO8_LE((p),     (guint32)((v)      ));   \
+  U32TO8_LE((p) + 4, (guint32)((v) >> 32));
+
+#define U8TO64_LE(p) \
+  (((guint64)((p)[0])      ) | \
+   ((guint64)((p)[1]) <<  8) | \
+   ((guint64)((p)[2]) << 16) | \
+   ((guint64)((p)[3]) << 24) | \
+   ((guint64)((p)[4]) << 32) | \
+   ((guint64)((p)[5]) << 40) | \
+   ((guint64)((p)[6]) << 48) | \
+   ((guint64)((p)[7]) << 56))
+
+#define SIPROUND            \
+  do {              \
+    v0 += v1; v1=ROTL(v1,13); v1 ^= v0; v0=ROTL(v0,32); \
+    v2 += v3; v3=ROTL(v3,16); v3 ^= v2;     \
+    v0 += v3; v3=ROTL(v3,21); v3 ^= v0;     \
+    v2 += v1; v1=ROTL(v1,17); v1 ^= v2; v2=ROTL(v2,32); \
+  } while(0)
 
 typedef enum
 {
@@ -178,6 +209,70 @@ typedef struct {
   int n_elements;
   MatchElement *elements;
 } Match;
+
+
+/**
+ * SipHash algorithm
+ *
+ */
+static void
+_g_siphash24 (guint8         out[8],
+              const void    *_in,
+              gsize          inlen,
+              const guint8   k[16])
+{
+  /* "somepseudorandomlygeneratedbytes" */
+  guint64 v0 = 0x736f6d6570736575ULL;
+  guint64 v1 = 0x646f72616e646f6dULL;
+  guint64 v2 = 0x6c7967656e657261ULL;
+  guint64 v3 = 0x7465646279746573ULL;
+  guint64 b;
+  guint64 k0 = U8TO64_LE (k);
+  guint64 k1 = U8TO64_LE (k + 8);
+  guint64 m;
+  const guint8 *in = _in;
+  const guint8 *end = in + inlen - (inlen % sizeof(guint64));
+  const int left = inlen & 7;
+  b = ((guint64) inlen) << 56;
+  v3 ^= k1;
+  v2 ^= k0;
+  v1 ^= k1;
+  v0 ^= k0;
+
+  for (; in != end; in += 8)
+    {
+      m = U8TO64_LE (in);
+      v3 ^= m;
+      SIPROUND;
+      SIPROUND;
+      v0 ^= m;
+    }
+
+  switch (left)
+    {
+      case 7: b |= ((guint64) in[6]) << 48;
+      case 6: b |= ((guint64) in[5]) << 40;
+      case 5: b |= ((guint64) in[4]) << 32;
+      case 4: b |= ((guint64) in[3]) << 24;
+      case 3: b |= ((guint64) in[2]) << 16;
+      case 2: b |= ((guint64) in[1]) <<  8;
+      case 1: b |= ((guint64) in[0]); break;
+      case 0: break;
+    }
+
+  v3 ^= b;
+  SIPROUND;
+  SIPROUND;
+  v0 ^= b;
+
+  v2 ^= 0xff;
+  SIPROUND;
+  SIPROUND;
+  SIPROUND;
+  SIPROUND;
+  b = v0 ^ v1 ^ v2  ^ v3;
+  U64TO8_LE (out, b);
+}
 
 
 /**
@@ -1213,7 +1308,7 @@ g_kdbus_bloom_add_data (GKDBusWorker  *worker,
         {
           if (c <= 0)
             {
-              g_siphash24(hash, data, n, hash_keys[cnt_1++]);
+              _g_siphash24(hash, data, n, hash_keys[cnt_1++]);
               c += 8;
             }
 

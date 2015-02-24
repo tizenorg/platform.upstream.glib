@@ -73,7 +73,6 @@
 #include <glib/gscanner.h>
 #include <glib/gsequence.h>
 #include <glib/gshell.h>
-#include <glib/gsiphash.h>
 #include <glib/gslice.h>
 #include <glib/gslist.h>
 #include <glib/gspawn.h>
