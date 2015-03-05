@@ -2039,7 +2039,7 @@ g_kdbus_decode_dbus_msg (GKDBusWorker           *worker,
 
         case KDBUS_ITEM_CREDS:
           {
-            g_print ("creds: u%u eu %u su%u fsu%u g%u eg%u sg%u fsg%u\n",
+            g_print ("creds: u%llu eu %llu su%llu fsu%llu g%llu eg%llu sg%llu fsg%llu\n",
                      item->creds.uid, item->creds.euid, item->creds.suid, item->creds.fsuid,
                      item->creds.gid, item->creds.egid, item->creds.sgid, item->creds.fsgid);
             break;
