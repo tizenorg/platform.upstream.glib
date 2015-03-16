@@ -25,7 +25,6 @@
 #include "giomodule.h"
 #include "giomodule-priv.h"
 #include "glocalfilemonitor.h"
-#include "glocaldirectorymonitor.h"
 #include "gnativevolumemonitor.h"
 #include "gproxyresolver.h"
 #include "gproxy.h"
@@ -37,6 +36,8 @@
 #include "gtlsbackend.h"
 #include "gvfs.h"
 #include "gnotificationbackend.h"
+#include "ginitable.h"
+#include "gnetworkmonitor.h"
 #ifdef G_OS_WIN32
 #include "gregistrysettingsbackend.h"
 #endif
@@ -886,17 +887,15 @@ _g_io_module_get_default (const gchar         *extension_point,
 G_LOCK_DEFINE_STATIC (registered_extensions);
 G_LOCK_DEFINE_STATIC (loaded_dirs);
 
-extern GType _g_fen_directory_monitor_get_type (void);
-extern GType _g_fen_file_monitor_get_type (void);
-extern GType _g_inotify_directory_monitor_get_type (void);
-extern GType _g_inotify_file_monitor_get_type (void);
-extern GType _g_kqueue_directory_monitor_get_type (void);
-extern GType _g_kqueue_file_monitor_get_type (void);
+extern GType g_fen_file_monitor_get_type (void);
+extern GType g_inotify_file_monitor_get_type (void);
+extern GType g_kqueue_file_monitor_get_type (void);
+extern GType g_win32_file_monitor_get_type (void);
+
 extern GType _g_unix_volume_monitor_get_type (void);
 extern GType _g_local_vfs_get_type (void);
 
 extern GType _g_win32_volume_monitor_get_type (void);
-extern GType g_win32_directory_monitor_get_type (void);
 extern GType _g_winhttp_vfs_get_type (void);
 
 extern GType _g_dummy_proxy_resolver_get_type (void);
@@ -910,6 +909,10 @@ extern GType _g_network_monitor_nm_get_type (void);
 #ifdef G_OS_UNIX
 extern GType g_fdo_notification_backend_get_type (void);
 extern GType g_gtk_notification_backend_get_type (void);
+#endif
+
+#ifdef HAVE_COCOA
+extern GType g_cocoa_notification_backend_get_type (void);
 #endif
 
 #ifdef G_PLATFORM_WIN32
@@ -947,16 +950,6 @@ _g_io_win32_get_module (void)
   return gio_dll;
 }
 
-#undef GIO_MODULE_DIR
-
-/* GIO_MODULE_DIR is used only in code called just once,
- * so no problem leaking this
- */
-#define GIO_MODULE_DIR \
-  g_build_filename (g_win32_get_package_installation_directory_of_module (gio_dll), \
-		    "lib/gio/modules", \
-		    NULL)
-
 #endif
 
 void
@@ -979,15 +972,9 @@ _g_io_modules_ensure_extension_points_registered (void)
       G_GNUC_END_IGNORE_DEPRECATIONS
 #endif
 #endif
-      
-      ep = g_io_extension_point_register (G_LOCAL_DIRECTORY_MONITOR_EXTENSION_POINT_NAME);
-      g_io_extension_point_set_required_type (ep, G_TYPE_LOCAL_DIRECTORY_MONITOR);
-      
+
       ep = g_io_extension_point_register (G_LOCAL_FILE_MONITOR_EXTENSION_POINT_NAME);
       g_io_extension_point_set_required_type (ep, G_TYPE_LOCAL_FILE_MONITOR);
-      
-      ep = g_io_extension_point_register (G_NFS_DIRECTORY_MONITOR_EXTENSION_POINT_NAME);
-      g_io_extension_point_set_required_type (ep, G_TYPE_LOCAL_DIRECTORY_MONITOR);
 
       ep = g_io_extension_point_register (G_NFS_FILE_MONITOR_EXTENSION_POINT_NAME);
       g_io_extension_point_set_required_type (ep, G_TYPE_LOCAL_FILE_MONITOR);
@@ -1023,13 +1010,45 @@ _g_io_modules_ensure_extension_points_registered (void)
   G_UNLOCK (registered_extensions);
 }
 
+static gchar *
+get_gio_module_dir (void)
+{
+  gchar *module_dir;
+
+  module_dir = g_strdup (g_getenv ("GIO_MODULE_DIR"));
+  if (module_dir == NULL)
+    {
+#ifdef G_OS_WIN32
+      gchar *install_dir;
+
+      install_dir = g_win32_get_package_installation_directory_of_module (gio_dll);
+#ifdef _MSC_VER
+      /* On Visual Studio builds we have all the libraries and binaries in bin
+       * so better load the gio modules from bin instead of lib
+       */
+      module_dir = g_build_filename (install_dir,
+                                     "bin", "gio", "modules",
+                                     NULL);
+#else
+      module_dir = g_build_filename (install_dir,
+                                     "lib", "gio", "modules",
+                                     NULL);
+#endif
+      g_free (install_dir);
+#else
+      module_dir = g_strdup (GIO_MODULE_DIR);
+#endif
+    }
+
+  return module_dir;
+}
+
 void
 _g_io_modules_ensure_loaded (void)
 {
   static gboolean loaded_dirs = FALSE;
   const char *module_path;
   GIOModuleScope *scope;
-  const gchar *module_dir;
 
   _g_io_modules_ensure_extension_points_registered ();
   
@@ -1037,6 +1056,8 @@ _g_io_modules_ensure_loaded (void)
 
   if (!loaded_dirs)
     {
+      gchar *module_dir;
+
       loaded_dirs = TRUE;
       scope = g_io_module_scope_new (G_IO_MODULE_SCOPE_BLOCK_DUPLICATES);
 
@@ -1058,11 +1079,10 @@ _g_io_modules_ensure_loaded (void)
 	}
 
       /* Then load the compiled in path */
-      module_dir = g_getenv ("GIO_MODULE_DIR");
-      if (module_dir == NULL)
-        module_dir = GIO_MODULE_DIR;
+      module_dir = get_gio_module_dir ();
 
       g_io_modules_scan_all_in_directory_with_scope (module_dir, scope);
+      g_free (module_dir);
 
       g_io_module_scope_free (scope);
 
@@ -1070,20 +1090,17 @@ _g_io_modules_ensure_loaded (void)
       g_type_ensure (g_null_settings_backend_get_type ());
       g_type_ensure (g_memory_settings_backend_get_type ());
 #if defined(HAVE_INOTIFY_INIT1)
-      g_type_ensure (_g_inotify_directory_monitor_get_type ());
-      g_type_ensure (_g_inotify_file_monitor_get_type ());
+      g_type_ensure (g_inotify_file_monitor_get_type ());
 #endif
 #if defined(HAVE_KQUEUE)
-      g_type_ensure (_g_kqueue_directory_monitor_get_type ());
-      g_type_ensure (_g_kqueue_file_monitor_get_type ());
+      g_type_ensure (g_kqueue_file_monitor_get_type ());
 #endif
 #if defined(HAVE_FEN)
-      g_type_ensure (_g_fen_directory_monitor_get_type ());
-      g_type_ensure (_g_fen_file_monitor_get_type ());
+      g_type_ensure (g_fen_file_monitor_get_type ());
 #endif
 #ifdef G_OS_WIN32
       g_type_ensure (_g_win32_volume_monitor_get_type ());
-      g_type_ensure (g_win32_directory_monitor_get_type ());
+      g_type_ensure (g_win32_file_monitor_get_type ());
       g_type_ensure (g_registry_backend_get_type ());
 #endif
 #ifdef HAVE_COCOA
@@ -1093,6 +1110,9 @@ _g_io_modules_ensure_loaded (void)
       g_type_ensure (_g_unix_volume_monitor_get_type ());
       g_type_ensure (g_fdo_notification_backend_get_type ());
       g_type_ensure (g_gtk_notification_backend_get_type ());
+#endif
+#ifdef HAVE_COCOA
+      g_type_ensure (g_cocoa_notification_backend_get_type ());
 #endif
 #ifdef G_OS_WIN32
       g_type_ensure (_g_winhttp_vfs_get_type ());

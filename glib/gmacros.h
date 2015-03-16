@@ -37,6 +37,12 @@
  */
 #include <stddef.h>
 
+#define G_GNUC_CHECK_VERSION(major, minor) \
+    (defined(__GNUC__) && \
+     ((__GNUC__ > (major)) || \
+      ((__GNUC__ == (major)) && \
+       (__GNUC_MINOR__ >= (minor)))))
+
 /* Here we provide G_GNUC_EXTENSION as an alias for __extension__,
  * where this is valid. This allows for warningless compilation of
  * "long long" types even in the presence of '-ansi -pedantic'. 
@@ -46,6 +52,27 @@
 #else
 #define G_GNUC_EXTENSION
 #endif
+
+/* Every compiler that we target supports inlining, but some of them may
+ * complain about it if we don't say "__inline".  If we have C99, then
+ * we can use "inline" directly.  Otherwise, we say "__inline" to avoid
+ * the warning.
+ */
+#define G_CAN_INLINE
+#if !defined(__STDC_VERSION__) || (__STDC_VERSION__ < 199900)
+#undef inline
+#define inline __inline
+#endif
+
+/* For historical reasons we need to continue to support those who
+ * define G_IMPLEMENT_INLINES to mean "don't implement this here".
+ */
+#ifdef G_IMPLEMENT_INLINES
+#  define G_INLINE_FUNC extern
+#  undef  G_CAN_INLINE
+#else
+#  define G_INLINE_FUNC static inline
+#endif /* G_IMPLEMENT_INLINES */
 
 /* Provide macros to feature the GCC function attribute.
  */
@@ -63,7 +90,21 @@
 #define G_GNUC_NULL_TERMINATED
 #endif
 
-#if     (__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3)
+/* Clang feature detection: http://clang.llvm.org/docs/LanguageExtensions.html */
+#ifndef __has_attribute
+#define __has_attribute(x) 0
+#endif
+
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
+
+#ifndef __has_builtin
+#define __has_builtin(x) 0
+#endif
+
+#if     (!defined(__clang__) && ((__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))) || \
+        (defined(__clang__) && __has_attribute(__alloc_size__))
 #define G_GNUC_ALLOC_SIZE(x) __attribute__((__alloc_size__(x)))
 #define G_GNUC_ALLOC_SIZE2(x,y) __attribute__((__alloc_size__(x,y)))
 #else
@@ -158,12 +199,7 @@
 #endif  /* !__GNUC__ */
 #endif  /* !G_DISABLE_DEPRECATED */
 
-/* Clang feature detection: http://clang.llvm.org/docs/LanguageExtensions.html */
-#ifndef __has_feature
-#define __has_feature(x) 0
-#endif
-
-#if __has_feature(attribute_analyzer_noreturn)
+#if __has_feature(attribute_analyzer_noreturn) && defined(__clang_analyzer__)
 #define G_ANALYZER_ANALYZING 1
 #define G_ANALYZER_NORETURN __attribute__((analyzer_noreturn))
 #else
@@ -279,7 +315,7 @@
  *   if (x) G_STMT_START { ... } G_STMT_END; else ...
  * This intentionally does not use compiler extensions like GCC's '({...})' to
  * avoid portability issue or side effects when compiled with different compilers.
- * MSVC complains about "while(0)": C4127: “Conditional expression is constant”,
+ * MSVC complains about "while(0)": C4127: "Conditional expression is constant",
  * so we use __pragma to avoid the warning since the use here is intentional.
  */
 #if !(defined (G_STMT_START) && defined (G_STMT_END))
@@ -322,8 +358,8 @@
       _g_boolean_var_ = 0;                      \
    _g_boolean_var_;                             \
 })
-#define G_LIKELY(expr) (__builtin_expect (_G_BOOLEAN_EXPR(expr), 1))
-#define G_UNLIKELY(expr) (__builtin_expect (_G_BOOLEAN_EXPR(expr), 0))
+#define G_LIKELY(expr) (__builtin_expect (_G_BOOLEAN_EXPR((expr)), 1))
+#define G_UNLIKELY(expr) (__builtin_expect (_G_BOOLEAN_EXPR((expr)), 0))
 #else
 #define G_LIKELY(expr) (expr)
 #define G_UNLIKELY(expr) (expr)

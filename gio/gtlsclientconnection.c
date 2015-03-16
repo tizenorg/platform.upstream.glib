@@ -156,6 +156,10 @@ g_tls_client_connection_default_init (GTlsClientConnectionInterface *iface)
  * must have pollable input and output streams) which is assumed to
  * communicate with the server identified by @server_identity.
  *
+ * See the documentation for #GTlsConnection:base-io-stream for restrictions
+ * on when application code can run operations on the @base_io_stream after
+ * this function has returned.
+ *
  * Returns: (transfer full) (type GTlsClientConnection): the new
  * #GTlsClientConnection, or %NULL on error
  *
@@ -337,4 +341,30 @@ g_tls_client_connection_get_accepted_cas (GTlsClientConnection *conn)
 
   g_object_get (G_OBJECT (conn), "accepted-cas", &accepted_cas, NULL);
   return accepted_cas;
+}
+
+/**
+ * g_tls_client_connection_copy_session_state:
+ * @conn: a #GTlsClientConnection
+ * @source: a #GTlsClientConnection
+ *
+ * Copies session state from one connection to another. This is
+ * not normally needed, but may be used when the same session
+ * needs to be used between different endpoints as is required
+ * by some protocols such as FTP over TLS. @source should have
+ * already completed a handshake, and @conn should not have
+ * completed a handshake.
+ *
+ * Since: 2.46
+ */
+void
+g_tls_client_connection_copy_session_state (GTlsClientConnection *conn,
+                                            GTlsClientConnection *source)
+{
+  g_return_if_fail (G_IS_TLS_CLIENT_CONNECTION (conn));
+  g_return_if_fail (G_IS_TLS_CLIENT_CONNECTION (source));
+  g_return_if_fail (G_TLS_CLIENT_CONNECTION_GET_INTERFACE (conn)->copy_session_state != NULL);
+
+  G_TLS_CLIENT_CONNECTION_GET_INTERFACE (conn)->copy_session_state (conn,
+                                                                    source);
 }

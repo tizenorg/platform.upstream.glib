@@ -30,8 +30,8 @@ m4_define(glib_configure_ac)
 # <mclasen> on the unstable (ie master), interface age = 0
 
 m4_define([glib_major_version], [2])
-m4_define([glib_minor_version], [43])
-m4_define([glib_micro_version], [92])
+m4_define([glib_minor_version], [48])
+m4_define([glib_micro_version], [0])
 m4_define([glib_interface_age], [0])
 m4_define([glib_binary_age],
           [m4_eval(100 * glib_minor_version + glib_micro_version)])
@@ -125,6 +125,7 @@ case "$host" in
   *-*-mingw*)
     glib_native_win32=yes
     glib_pid_type='void *'
+    glib_pollfd_format='%#x'
     glib_cv_stack_grows=no
     # Unfortunately the mingw implementations of C99-style snprintf and vsnprintf
     # don't seem to be quite good enough, at least not in mingw-runtime-3.14.
@@ -138,6 +139,7 @@ case "$host" in
     case "$host" in
     x86_64-*-*)
       LIB_EXE_MACHINE_FLAG=X64
+      glib_pollfd_format='%#I64x'
       ;;
     esac
 
@@ -146,6 +148,7 @@ case "$host" in
   *)
     glib_native_win32=no
     glib_pid_type=int
+    glib_pollfd_format='%d'
     ;;
 esac
 case $host in
@@ -223,6 +226,15 @@ AS_IF([test "x$glib_have_cocoa" = "xyes"], [
   AC_DEFINE(HAVE_COCOA, 1, [define to 1 if Cocoa is available])
   COCOA_LIBS="-Wl,-framework,Foundation"
   LDFLAGS="$LDFLAGS $COCOA_LIBS"
+
+  osx_version=`sw_vers -productVersion`
+  osx_min_version="10.9.0"
+  AC_MSG_CHECKING([OSX version >= $osx_min_version])
+  AS_VERSION_COMPARE([$osx_version], [$osx_min_version], [
+    AC_MSG_RESULT([no])
+    AC_MSG_ERROR([OSX version is too old!])
+  ])
+  AC_MSG_RESULT([yes])
 ], [COCOA_LIBS=""])
 
 AC_SUBST([COCOA_LIBS])
@@ -270,9 +282,7 @@ AC_ARG_WITH(runtime-libdir,
            [],
 	   [with_runtime_libdir=""])
 GLIB_RUNTIME_LIBDIR="$with_runtime_libdir"
-ABS_GLIB_RUNTIME_LIBDIR="`readlink -f $libdir/$with_runtime_libdir`"
 AC_SUBST(GLIB_RUNTIME_LIBDIR)
-AC_SUBST(ABS_GLIB_RUNTIME_LIBDIR)
 AM_CONDITIONAL(HAVE_GLIB_RUNTIME_LIBDIR, [test "x$with_runtime_libdir" != "x"])
 
 dnl Check for a working C++ compiler, but do not bail out, if none is found.
@@ -516,7 +526,7 @@ AM_CONDITIONAL(OS_WIN32_AND_DLL_COMPILATION, [test x$glib_native_win32 = xyes -a
 # Checks for library functions.
 AC_FUNC_ALLOCA
 AC_CHECK_FUNCS(mmap posix_memalign memalign valloc fsync pipe2 issetugid)
-AC_CHECK_FUNCS(timegm gmtime_r)
+AC_CHECK_FUNCS(timegm gmtime_r strerror_r)
 
 AC_CACHE_CHECK([for __libc_enable_secure], glib_cv_have_libc_enable_secure,
   [AC_TRY_LINK([#include <unistd.h>
@@ -610,78 +620,6 @@ AC_CACHE_CHECK([for growing stack pointer],glib_cv_stack_grows,[
 	glib_cv_stack_grows=no
         ,)
 ])
-
-dnl AC_C_INLINE is useless to us since it bails out too early, we need to
-dnl truely know which ones of `inline', `__inline' and `__inline__' are
-dnl actually supported.
-AC_CACHE_CHECK([for __inline],glib_cv_has__inline,[
-        AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
-	__inline int foo () { return 0; }
-	int main () { return foo (); }
-	]])],
-	glib_cv_has__inline=yes
-        ,
-	glib_cv_has__inline=no
-        ,)
-])
-case x$glib_cv_has__inline in
-xyes) AC_DEFINE(G_HAVE___INLINE,1,[Have __inline keyword])
-esac
-AC_CACHE_CHECK([for __inline__],glib_cv_has__inline__,[
-        AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
-	__inline__ int foo () { return 0; }
-	int main () { return foo (); }
-	]])],
-	glib_cv_has__inline__=yes
-        ,
-	glib_cv_has__inline__=no
-        ,)
-])
-case x$glib_cv_has__inline__ in
-xyes) AC_DEFINE(G_HAVE___INLINE__,1,[Have __inline__ keyword])
-esac
-AC_CACHE_CHECK([for inline], glib_cv_hasinline,[
-        AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
-	#undef inline
-	inline int foo () { return 0; }
-	int main () { return foo (); }
-	]])],
-	glib_cv_hasinline=yes
-        ,
-	glib_cv_hasinline=no
-        ,)
-])
-case x$glib_cv_hasinline in
-xyes) AC_DEFINE(G_HAVE_INLINE,1,[Have inline keyword])
-esac
-
-# if we can use inline functions in headers
-AC_MSG_CHECKING(if inline functions in headers work)
-AC_LINK_IFELSE([AC_LANG_SOURCE([[
-#if defined (G_HAVE_INLINE) && defined (__GNUC__) && defined (__STRICT_ANSI__)
-#  undef inline
-#  define inline __inline__
-#elif !defined (G_HAVE_INLINE)
-#  undef inline
-#  if defined (G_HAVE___INLINE__)
-#    define inline __inline__
-#  elif defined (G_HAVE___INLINE)
-#    define inline __inline
-#  endif
-#endif
-
-int glib_test_func2 (int);
-
-static inline int
-glib_test_func1 (void) {
-  return glib_test_func2 (1);
-}
-
-int
-main (void) {
-  int i = 1;
-}]])],[g_can_inline=yes],[g_can_inline=no])
-AC_MSG_RESULT($g_can_inline)
 
 # check for flavours of varargs macros
 AC_MSG_CHECKING(for ISO C99 varargs macros in C)
@@ -791,7 +729,7 @@ AC_HEADER_MAJOR
 AC_CHECK_HEADERS([xlocale.h])
 
 # check for structure fields
-AC_CHECK_MEMBERS([struct stat.st_mtimensec, struct stat.st_mtim.tv_nsec, struct stat.st_atimensec, struct stat.st_atim.tv_nsec, struct stat.st_ctimensec, struct stat.st_ctim.tv_nsec])
+AC_CHECK_MEMBERS([struct stat.st_mtimensec, struct stat.st_mtim.tv_nsec, struct stat.st_atimensec, struct stat.st_atim.tv_nsec, struct stat.st_ctimensec, struct stat.st_ctim.tv_nsec, struct stat.st_birthtime, struct stat.st_birthtimensec, struct stat.st_birthtim, struct stat.st_birthtim.tv_nsec])
 AC_CHECK_MEMBERS([struct stat.st_blksize, struct stat.st_blocks, struct statfs.f_fstypename, struct statfs.f_bavail],,, [#include <sys/types.h>
 #include <sys/stat.h>
 #ifdef G_OS_UNIX
@@ -1020,7 +958,7 @@ if $glib_failed ; then
   AC_MSG_ERROR([Could not determine values for MSG_* constants])
 fi
 
-AC_CHECK_FUNCS(getprotobyname_r endservent if_nametoindex if_indextoname sendmmsg)
+AC_CHECK_FUNCS(getprotobyname_r endservent if_nametoindex if_indextoname sendmmsg recvmmsg)
 
 AS_IF([test $glib_native_win32 = yes], [
   # <wspiapi.h> in the Windows SDK and in mingw-w64 has wrappers for
@@ -1215,7 +1153,7 @@ gt_TYPE_WINT_T
 AC_TYPE_SIZE_T
 AC_CHECK_TYPES(ptrdiff_t)
 jm_AC_TYPE_INTMAX_T
-AC_CHECK_FUNCS([snprintf wcslen])
+AC_CHECK_FUNCS([snprintf strnlen wcslen wcsnlen mbrtowc wcrtomb])
 AC_FUNC_SNPRINTF_C99
 
 # Check if <sys/select.h> needs to be included for fd_set
@@ -1677,22 +1615,6 @@ AC_CHECK_HEADERS([sys/event.h],
 
 AM_CONDITIONAL(HAVE_KQUEUE, [test "$kqueue_support" = "yes"])
 
-dnl *********************************
-dnl ** Check for Solaris FEN (GIO) **
-dnl *********************************
-fen_support=no
-AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
-#include <port.h> 
-#ifndef PORT_SOURCE_FILE 
-#error "Please upgrade to Nevada 72 or above to suppoert FEN" 
-#endif 
-int main() { return 0; } ]])],
-[
-	fen_support=yes
-],)
-
-AM_CONDITIONAL(HAVE_FEN, [test "$fen_support" = "yes"])
-
 dnl ****************************
 dnl *** Checks for FAM (GIO) ***
 dnl ****************************
@@ -2128,85 +2050,8 @@ glib_save_LIBS="$LIBS"
 # we are not doing the following for now, as this might require glib 
 # to always be linked with the thread libs on some platforms. 
 # LIBS="$LIBS $G_THREAD_LIBS"
-AC_CHECK_FUNCS(localtime_r gmtime_r)
-AS_IF([ test "$glib_native_win32" != "yes"], [
- 	AC_CACHE_CHECK([for posix getpwuid_r],
-		ac_cv_func_posix_getpwuid_r,
-		[AC_TRY_RUN([
-#include <errno.h>
-#include <pwd.h>
-int main () { 
-    char buffer[10000];
-    struct passwd pwd, *pwptr = &pwd;
-    int error;
-    errno = 0;
-    error = getpwuid_r (0, &pwd, buffer, 
-                        sizeof (buffer), &pwptr);
-   return (error < 0 && errno == ENOSYS) 
-	   || error == ENOSYS; 
-}                               ],
-			[ac_cv_func_posix_getpwuid_r=yes],
-			[ac_cv_func_posix_getpwuid_r=no])])
-	GLIB_ASSERT_SET(ac_cv_func_posix_getpwuid_r)
-	if test "$ac_cv_func_posix_getpwuid_r" = yes; then
-		AC_DEFINE(HAVE_POSIX_GETPWUID_R,1,
-			[Have POSIX function getpwuid_r])
-	else
- 		AC_CACHE_CHECK([for nonposix getpwuid_r],
-			ac_cv_func_nonposix_getpwuid_r,
-			[AC_TRY_LINK([#include <pwd.h>],
-                        	[char buffer[10000];
-                        	struct passwd pwd;
-                        	getpwuid_r (0, &pwd, buffer, 
-                                		sizeof (buffer));],
-				[ac_cv_func_nonposix_getpwuid_r=yes],
-				[ac_cv_func_nonposix_getpwuid_r=no])])
-		GLIB_ASSERT_SET(ac_cv_func_nonposix_getpwuid_r)
-		if test "$ac_cv_func_nonposix_getpwuid_r" = yes; then
-			AC_DEFINE(HAVE_NONPOSIX_GETPWUID_R,1,
-				[Have non-POSIX function getpwuid_r])
-		fi
-	fi
-])
-AS_IF([ test "$glib_native_win32" != "yes"], [
-   	AC_CACHE_CHECK([for posix getgrgid_r],
-		ac_cv_func_posix_getgrgid_r,
-		[AC_TRY_RUN([
-#include <errno.h>
-#include <grp.h>
-int main () { 
-    char buffer[10000];
-    struct group grp, *grpptr = &grp;
-    int error;
-    errno = 0;
-    error = getgrgid_r (0, &grp, buffer, 
-                        sizeof (buffer), &grpptr);
-   return (error < 0 && errno == ENOSYS) 
-	   || error == ENOSYS; 
-}                              ],
-		       [ac_cv_func_posix_getgrgid_r=yes],
-		       [ac_cv_func_posix_getgrgid_r=no])])
-	GLIB_ASSERT_SET(ac_cv_func_posix_getgrgid_r)
-	AS_IF([ test "$ac_cv_func_posix_getgrgid_r" = yes ], [
-	   	AC_DEFINE(HAVE_POSIX_GETGRGID_R,1,
-			[Have POSIX function getgrgid_r])
-	], [
-		AC_CACHE_CHECK([for nonposix getgrgid_r],
-			ac_cv_func_nonposix_getgrgid_r,
-			[AC_TRY_LINK([#include <grp.h>],
-                       		[char buffer[10000];
-				struct group grp;	
-				getgrgid_r (0, &grp, buffer, 
-                               	sizeof (buffer));],
-			[ac_cv_func_nonposix_getgrgid_r=yes],
-			[ac_cv_func_nonposix_getgrgid_r=no])])
-		GLIB_ASSERT_SET(ac_cv_func_nonposix_getgrgid_r)
-		if test "$ac_cv_func_nonposix_getgrgid_r" = yes; then
-		   	AC_DEFINE(HAVE_NONPOSIX_GETGRGID_R,1,
-				[Have non-POSIX function getgrgid_r])
-		fi
-	])
-])
+AC_CHECK_FUNCS(localtime_r gmtime_r getpwuid_r getgrgid_r)
+
 LIBS="$G_THREAD_LIBS $LIBS"
 AS_IF([ test x"$have_threads" = xposix], [
         glib_save_CPPFLAGS="$CPPFLAGS"
@@ -2256,8 +2101,7 @@ AS_IF([ test x"$have_threads" = xposix], [
 LIBS="$glib_save_LIBS"
 
 # now spit out all the warnings.
-if test "$ac_cv_func_posix_getpwuid_r" != "yes" && 
-   test "$ac_cv_func_nonposix_getpwuid_r" != "yes"; then
+if test "$ac_cv_func_getpwuid_r" != "yes"; then
 	AC_MSG_WARN($FUNC_NO_GETPWUID_R)
 fi
 if test "$ac_cv_func_localtime_r" != "yes"; then
@@ -2466,7 +2310,9 @@ PCRE_REQUIRED_VERSION=8.13
 # Check if we should use the internal or the system-supplied pcre
 AC_ARG_WITH(pcre,
             [AS_HELP_STRING([--with-pcre=@<:@internal/system@:>@],
-                            [whether to use system PCRE [default=internal]])])
+                            [whether to use system PCRE [default=system]])],
+            [],
+            [with_pcre=system])
 
 AM_CONDITIONAL(USE_SYSTEM_PCRE, [test "x$with_pcre" = xsystem])
 
@@ -2544,29 +2390,9 @@ int error = EILSEQ;
 ], have_eilseq=yes, have_eilseq=no);
 AC_MSG_RESULT($have_eilseq)
 
-dnl ******************************************************************
-dnl *** If we are cross-compiling, look for glib-genmarshal and    ***
-dnl *** glib-compile-schemas in PATH                               ***
-dnl ******************************************************************
-
+dnl Add a conditional we can use when cross-compiling, so we avoid running
+dnl binaries
 AM_CONDITIONAL(CROSS_COMPILING, test $cross_compiling = yes)
-
-AS_IF([ test $cross_compiling = yes ], [
-  AC_PATH_PROG(GLIB_GENMARSHAL, glib-genmarshal, no)
-  if test x$GLIB_GENMARSHAL = xno; then
-    AC_MSG_ERROR(Could not find a glib-genmarshal in your PATH)
-  fi
-
-  AC_PATH_PROG(GLIB_COMPILE_SCHEMAS, glib-compile-schemas, no)
-  if test x$GLIB_COMPILE_SCHEMAS = xno; then
-    AC_MSG_ERROR(Could not find a glib-compile-schemas in your PATH)
-  fi
-
-  AC_PATH_PROG(GLIB_COMPILE_RESOURCES, glib-compile-resources, no)
-  if test x$GLIB_COMPILE_RESOURCES = xno; then
-    AC_MSG_ERROR(Could not find a glib-compile-resources in your PATH)
-  fi
-])
 
 dnl **************************
 dnl *** Checks for gtk-doc ***
@@ -2610,7 +2436,7 @@ AS_IF([test "$enable_man" != no], [
   dnl check for DocBook XSL stylesheets in the local catalog
   JH_CHECK_XML_CATALOG([http://docbook.sourceforge.net/release/xsl/current/manpages/docbook.xsl],
      [DocBook XSL Stylesheets], [have_docbook_style=yes],[have_docbook_style=no])
-  AS_IF([ test "$have_docbook_dtd" != yes ], [
+  AS_IF([ test "$have_docbook_style" != yes ], [
     AS_IF([ test "$enable_man" = yes ], [
       AC_MSG_ERROR([DocBook XSL Stylesheets are required for --enable-man])
     ])
@@ -2893,6 +2719,8 @@ typedef gint64 goffset;
 #define G_GOFFSET_FORMAT        G_GINT64_FORMAT
 #define G_GOFFSET_CONSTANT(val) G_GINT64_CONSTANT(val)
 
+#define G_POLLFD_FORMAT $g_pollfd_format
+
 _______EOF
 
 	if test -z "$glib_unknown_void_p"; then
@@ -2927,26 +2755,6 @@ $glib_os
 $glib_static_compilation
 
 $glib_vacopy
-
-#ifdef	__cplusplus
-#define	G_HAVE_INLINE	1
-#else	/* !__cplusplus */
-$glib_inline
-#endif	/* !__cplusplus */
-
-#ifdef	__cplusplus
-#define G_CAN_INLINE	1
-_______EOF
-
-	if test x$g_can_inline = xyes ; then
-		cat >>$outfile <<_______EOF
-#else	/* !__cplusplus */
-#define G_CAN_INLINE	1
-_______EOF
-	fi
-
-	cat >>$outfile <<_______EOF
-#endif
 
 _______EOF
 
@@ -3294,23 +3102,10 @@ if test x$glib_cv_va_val_copy = xno; then
 #define G_VA_COPY_AS_ARRAY 1"
 fi
 
-if test x$glib_cv_hasinline = xyes; then
-    glib_inline='#define G_HAVE_INLINE 1'
-fi
-if test x$glib_cv_has__inline = xyes; then
-    glib_inline="\$glib_inline
-#define G_HAVE___INLINE 1"
-fi
-if test x$glib_cv_has__inline__ = xyes; then
-    glib_inline="\$glib_inline
-#define G_HAVE___INLINE__ 1"
-fi
-
 g_have_gnuc_varargs=$g_have_gnuc_varargs
 g_have_iso_c_varargs=$g_have_iso_c_varargs
 g_have_iso_cxx_varargs=$g_have_iso_cxx_varargs
 
-g_can_inline=$g_can_inline
 g_have_gnuc_visibility=$g_have_gnuc_visibility
 g_have_sunstudio_visibility=$g_have_sunstudio_visibility
 
@@ -3360,8 +3155,9 @@ g_memory_barrier_needed="$glib_memory_barrier_needed"
 g_gcc_atomic_ops="$glib_cv_gcc_has_builtin_atomic_operations"
 
 g_module_suffix="$glib_gmodule_suffix"
-
 g_pid_type="$glib_pid_type"
+g_pollfd_format="\"$glib_pollfd_format\""
+
 case $host in
   *-*-cygwin*)
     glib_os="#define G_OS_UNIX
@@ -3456,8 +3252,6 @@ if test "x${enable_Bsymbolic}" = "xyes"; then
   GLIB_LINK_FLAGS=-Wl,-Bsymbolic-functions
 fi
 
-AC_SUBST(GLIB_LINK_FLAGS)
-
 dnl
 dnl Check for -z,nodelete linker flag: the type system assumes that
 dnl libgobject stays loaded for the lifetime of the process.
@@ -3488,10 +3282,10 @@ AC_ARG_ENABLE([znodelete],
                LDFLAGS="${SAVED_LDFLAGS}" LIBS="${SAVED_LIBS}"])
 
 if test "x${enable_znodelete}" = "xyes"; then
-  GOBJECT_LINK_FLAGS=-Wl,-z,nodelete
+  GLIB_LINK_FLAGS="$GLIB_LINK_FLAGS -Wl,-z,nodelete"
 fi
 
-AC_SUBST(GOBJECT_LINK_FLAGS)
+AC_SUBST(GLIB_LINK_FLAGS)
 
 dnl
 dnl Check for -fvisibility=hidden to determine if we can do GNU-style
@@ -3592,11 +3386,13 @@ build/Makefile
 build/win32/Makefile
 build/win32/dirent/Makefile
 build/win32/vs9/Makefile
+build/win32/vs9/glib-version-paths.vsprops
 build/win32/vs10/Makefile
+build/win32/vs10/glib-version-paths.props
 build/win32/vs11/Makefile
 build/win32/vs12/Makefile
+build/win32/vs14/Makefile
 glib/Makefile
-glib/glib.stp
 glib/libcharset/Makefile
 glib/gnulib/Makefile
 glib/pcre/Makefile
@@ -3605,7 +3401,6 @@ glib/tests/Makefile
 gmodule/Makefile
 gmodule/gmoduleconf.h
 gobject/Makefile
-gobject/gobject.stp
 gobject/glib-mkenums
 gobject/tests/Makefile
 gthread/Makefile
@@ -3616,7 +3411,6 @@ gio/gnetworking.h
 gio/xdgmime/Makefile
 gio/inotify/Makefile
 gio/kqueue/Makefile
-gio/fen/Makefile
 gio/fam/Makefile
 gio/win32/Makefile
 gio/tests/Makefile
@@ -3632,7 +3426,6 @@ docs/reference/glib/version.xml
 docs/reference/gobject/Makefile
 docs/reference/gobject/version.xml
 docs/reference/gio/Makefile
-docs/reference/gio/gdbus-object-manager-example/Makefile
 docs/reference/gio/version.xml
 tests/Makefile
 tests/gobject/Makefile

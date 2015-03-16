@@ -216,7 +216,7 @@ end_element (GMarkupParseContext  *context,
     {
       gchar *file, *real_file;
       gchar *key;
-      FileData *data;
+      FileData *data = NULL;
       char *tmp_file = NULL;
       char *tmp_file2 = NULL;
 
@@ -237,8 +237,6 @@ end_element (GMarkupParseContext  *context,
 		       key);
 	  return;
 	}
-
-      data = g_new0 (FileData, 1);
 
       if (sourcedirs != NULL)
         {
@@ -263,6 +261,7 @@ end_element (GMarkupParseContext  *context,
 	  real_file = g_strdup (file);
 	}
 
+      data = g_new0 (FileData, 1);
       data->filename = g_strdup (real_file);
       if (!state->collect_data)
         goto done;
@@ -416,6 +415,7 @@ end_element (GMarkupParseContext  *context,
     done:
 
       g_hash_table_insert (state->table, key, data);
+      data = NULL;
 
     cleanup:
       /* Cleanup */
@@ -440,6 +440,9 @@ end_element (GMarkupParseContext  *context,
           unlink (tmp_file2);
           g_free (tmp_file2);
         }
+
+      if (data != NULL)
+        file_data_free (data);
     }
 }
 
@@ -637,6 +640,7 @@ main (int argc, char **argv)
   if (argc != 2)
     {
       g_printerr (_("You should give exactly one file name\n"));
+      g_free (c_name);
       return 1;
     }
 
@@ -669,6 +673,12 @@ main (int argc, char **argv)
 	    base[strlen(base) - strlen (".gresource")] = 0;
 	  target_basename = g_strconcat (base, ".c", NULL);
 	}
+      else if (generate_header)
+        {
+          if (g_str_has_suffix (base, ".gresource"))
+            base[strlen(base) - strlen (".gresource")] = 0;
+          target_basename = g_strconcat (base, ".h", NULL);
+        }
       else
 	{
 	  if (g_str_has_suffix (base, ".gresource"))
@@ -695,6 +705,7 @@ main (int argc, char **argv)
   if ((table = parse_resource_file (srcfile, !generate_dependencies)) == NULL)
     {
       g_free (target);
+      g_free (c_name);
       return 1;
     }
 
@@ -719,6 +730,7 @@ main (int argc, char **argv)
 	  if (fd == -1)
 	    {
 	      g_printerr ("Can't open temp file\n");
+	      g_free (c_name);
 	      return 1;
 	    }
 	  close (fd);
@@ -764,6 +776,7 @@ main (int argc, char **argv)
     {
       g_printerr ("%s\n", error->message);
       g_free (target);
+      g_free (c_name);
       return 1;
     }
 
@@ -775,6 +788,7 @@ main (int argc, char **argv)
       if (file == NULL)
 	{
 	  g_printerr ("can't write to file %s", target);
+	  g_free (c_name);
 	  return 1;
 	}
 
@@ -811,6 +825,7 @@ main (int argc, char **argv)
 				&data_size, NULL))
 	{
 	  g_printerr ("can't read back temporary file");
+	  g_free (c_name);
 	  return 1;
 	}
       g_unlink (binary_target);
@@ -819,6 +834,7 @@ main (int argc, char **argv)
       if (file == NULL)
 	{
 	  g_printerr ("can't write to file %s", target);
+	  g_free (c_name);
 	  return 1;
 	}
 
@@ -914,6 +930,7 @@ main (int argc, char **argv)
   g_free (target);
   g_hash_table_destroy (table);
   g_free (xmllint);
+  g_free (c_name);
 
   return 0;
 }

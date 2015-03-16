@@ -22,6 +22,7 @@
 
 #include "gasyncresult.h"
 #include "gcancellable.h"
+#include "glib-private.h"
 
 #include "glibintl.h"
 
@@ -193,11 +194,11 @@
  *
  *       // baking_data_free() will drop its ref on the cake, so we have to
  *       // take another here to give to the caller.
- *       g_task_return_pointer (result, g_object_ref (cake), g_object_unref);
+ *       g_task_return_pointer (task, g_object_ref (cake), g_object_unref);
  *       g_object_unref (task);
  *     }
  *
- *     static void
+ *     static gboolean
  *     decorator_ready (gpointer user_data)
  *     {
  *       GTask *task = user_data;
@@ -206,6 +207,8 @@
  *       cake_decorate_async (bd->cake, bd->frosting, bd->message,
  *                            g_task_get_cancellable (task),
  *                            decorated_cb, task);
+ *
+ *       return G_SOURCE_REMOVE;
  *     }
  *
  *     static void
@@ -242,8 +245,7 @@
  *           source = cake_decorator_wait_source_new (cake);
  *           // Attach @source to @task's GMainContext and have it call
  *           // decorator_ready() when it is ready.
- *           g_task_attach_source (task, source,
- *                                 G_CALLBACK (decorator_ready));
+ *           g_task_attach_source (task, source, decorator_ready);
  *           g_source_unref (source);
  *         }
  *     }
@@ -582,8 +584,6 @@ typedef enum
   PROP_COMPLETED = 1,
 } GTaskProperty;
 
-static void g_task_thread_pool_resort (void);
-
 static void g_task_async_result_iface_init (GAsyncResultIface *iface);
 static void g_task_thread_pool_init (void);
 
@@ -595,6 +595,25 @@ G_DEFINE_TYPE_WITH_CODE (GTask, g_task, G_TYPE_OBJECT,
 static GThreadPool *task_pool;
 static GMutex task_pool_mutex;
 static GPrivate task_private = G_PRIVATE_INIT (NULL);
+static GSource *task_pool_manager;
+static guint64 task_wait_time;
+static gint tasks_running;
+
+/* When the task pool fills up and blocks, and the program keeps
+ * queueing more tasks, we will slowly add more threads to the pool
+ * (in case the existing tasks are trying to queue subtasks of their
+ * own) until tasks start completing again. These "overflow" threads
+ * will only run one task apiece, and then exit, so the pool will
+ * eventually get back down to its base size.
+ *
+ * The base and multiplier below gives us 10 extra threads after about
+ * a second of blocking, 30 after 5 seconds, 100 after a minute, and
+ * 200 after 20 minutes.
+ */
+#define G_TASK_POOL_SIZE 10
+#define G_TASK_WAIT_TIME_BASE 100000
+#define G_TASK_WAIT_TIME_MULTIPLIER 1.03
+#define G_TASK_WAIT_TIME_MAX (30 * 60 * 1000000)
 
 static void
 g_task_init (GTask *task)
@@ -1200,15 +1219,6 @@ g_task_thread_complete (GTask *task)
     }
 
   task->thread_complete = TRUE;
-
-  if (task->blocking_other_task)
-    {
-      g_mutex_lock (&task_pool_mutex);
-      g_thread_pool_set_max_threads (task_pool,
-                                     g_thread_pool_get_max_threads (task_pool) - 1,
-                                     NULL);
-      g_mutex_unlock (&task_pool_mutex);
-    }
   g_mutex_unlock (&task->lock);
 
   if (task->cancellable)
@@ -1220,20 +1230,67 @@ g_task_thread_complete (GTask *task)
     g_task_return (task, G_TASK_RETURN_FROM_THREAD);
 }
 
+static gboolean
+task_pool_manager_timeout (gpointer user_data)
+{
+  g_mutex_lock (&task_pool_mutex);
+  g_thread_pool_set_max_threads (task_pool, tasks_running + 1, NULL);
+  g_source_set_ready_time (task_pool_manager, -1);
+  g_mutex_unlock (&task_pool_mutex);
+
+  return TRUE;
+}
+
+static void
+g_task_thread_setup (void)
+{
+  g_private_set (&task_private, GUINT_TO_POINTER (TRUE));
+  g_mutex_lock (&task_pool_mutex);
+  tasks_running++;
+
+  if (tasks_running == G_TASK_POOL_SIZE)
+    task_wait_time = G_TASK_WAIT_TIME_BASE;
+  else if (tasks_running > G_TASK_POOL_SIZE && task_wait_time < G_TASK_WAIT_TIME_MAX)
+    task_wait_time *= G_TASK_WAIT_TIME_MULTIPLIER;
+
+  if (tasks_running >= G_TASK_POOL_SIZE)
+    g_source_set_ready_time (task_pool_manager, g_get_monotonic_time () + task_wait_time);
+
+  g_mutex_unlock (&task_pool_mutex);
+}
+
+static void
+g_task_thread_cleanup (void)
+{
+  gint tasks_pending;
+
+  g_mutex_lock (&task_pool_mutex);
+  tasks_pending = g_thread_pool_unprocessed (task_pool);
+
+  if (tasks_running > G_TASK_POOL_SIZE)
+    g_thread_pool_set_max_threads (task_pool, tasks_running - 1, NULL);
+  else if (tasks_running + tasks_pending < G_TASK_POOL_SIZE)
+    g_source_set_ready_time (task_pool_manager, -1);
+
+  tasks_running--;
+  g_mutex_unlock (&task_pool_mutex);
+  g_private_set (&task_private, GUINT_TO_POINTER (FALSE));
+}
+
 static void
 g_task_thread_pool_thread (gpointer thread_data,
                            gpointer pool_data)
 {
   GTask *task = thread_data;
 
-  g_private_set (&task_private, task);
+  g_task_thread_setup ();
 
   task->task_func (task, task->source_object, task->task_data,
                    task->cancellable);
   g_task_thread_complete (task);
-
-  g_private_set (&task_private, NULL);
   g_object_unref (task);
+
+  g_task_thread_cleanup ();
 }
 
 static void
@@ -1242,7 +1299,10 @@ task_thread_cancelled (GCancellable *cancellable,
 {
   GTask *task = user_data;
 
-  g_task_thread_pool_resort ();
+  /* Move this task to the front of the queue - no need for
+   * a complete resorting of the queue.
+   */
+  g_thread_pool_move_to_front (task_pool, task);
 
   g_mutex_lock (&task->lock);
   task->thread_cancelled = TRUE;
@@ -1304,19 +1364,9 @@ g_task_start_task_thread (GTask           *task,
                              task_thread_cancelled_disconnect_notify, 0);
     }
 
-  g_thread_pool_push (task_pool, g_object_ref (task), NULL);
   if (g_private_get (&task_private))
-    {
-      /* This thread is being spawned from another GTask thread, so
-       * bump up max-threads so we don't starve.
-       */
-      g_mutex_lock (&task_pool_mutex);
-      if (g_thread_pool_set_max_threads (task_pool,
-                                         g_thread_pool_get_max_threads (task_pool) + 1,
-                                         NULL))
-        task->blocking_other_task = TRUE;
-      g_mutex_unlock (&task_pool_mutex);
-    }
+    task->blocking_other_task = TRUE;
+  g_thread_pool_push (task_pool, g_object_ref (task), NULL);
 }
 
 /**
@@ -1330,6 +1380,12 @@ g_task_start_task_thread (GTask           *task,
  * This takes a ref on @task until the task completes.
  *
  * See #GTaskThreadFunc for more details about how @task_func is handled.
+ *
+ * Although GLib currently rate-limits the tasks queued via
+ * g_task_run_in_thread(), you should not assume that it will always
+ * do this. If you have a very large number of tasks to run, but don't
+ * want them to all run at once, you should only queue a limited
+ * number of them at a time.
  *
  * Since: 2.36
  */
@@ -1371,6 +1427,12 @@ g_task_run_in_thread (GTask           *task,
  * `callback`, but note that even if the task does
  * have a callback, it will not be invoked when @task_func returns.
  * #GTask:completed will be set to %TRUE just before this function returns.
+ *
+ * Although GLib currently rate-limits the tasks queued via
+ * g_task_run_in_thread_sync(), you should not assume that it will
+ * always do this. If you have a very large number of tasks to run,
+ * but don't want them to all run at once, you should only queue a
+ * limited number of them at a time.
  *
  * Since: 2.36
  */
@@ -1816,20 +1878,36 @@ g_task_compare_priority (gconstpointer a,
   return ta->priority - tb->priority;
 }
 
+static gboolean
+trivial_source_dispatch (GSource     *source,
+                         GSourceFunc  callback,
+                         gpointer     user_data)
+{
+  return callback (user_data);
+}
+
+GSourceFuncs trivial_source_funcs = {
+  NULL, /* prepare */
+  NULL, /* check */
+  trivial_source_dispatch,
+  NULL
+};
+
 static void
 g_task_thread_pool_init (void)
 {
   task_pool = g_thread_pool_new (g_task_thread_pool_thread, NULL,
-                                 10, FALSE, NULL);
+                                 G_TASK_POOL_SIZE, FALSE, NULL);
   g_assert (task_pool != NULL);
 
   g_thread_pool_set_sort_function (task_pool, g_task_compare_priority, NULL);
-}
 
-static void
-g_task_thread_pool_resort (void)
-{
-  g_thread_pool_set_sort_function (task_pool, g_task_compare_priority, NULL);
+  task_pool_manager = g_source_new (&trivial_source_funcs, sizeof (GSource));
+  g_source_set_callback (task_pool_manager, task_pool_manager_timeout, NULL, NULL);
+  g_source_set_ready_time (task_pool_manager, -1);
+  g_source_attach (task_pool_manager,
+                   GLIB_PRIVATE_CALL (g_get_worker_context ()));
+  g_source_unref (task_pool_manager);
 }
 
 static void

@@ -46,8 +46,7 @@
 #include "giomodule-priv.h"
 #include "gappinfo.h"
 #include "gappinfoprivate.h"
-#include "glocaldirectorymonitor.h"
-
+#include "glocalfilemonitor.h"
 
 /**
  * SECTION:gdesktopappinfo
@@ -140,7 +139,7 @@ typedef struct
   gchar                      *alternatively_watching;
   gboolean                    is_config;
   gboolean                    is_setup;
-  GLocalDirectoryMonitor     *monitor;
+  GFileMonitor               *monitor;
   GHashTable                 *app_names;
   GHashTable                 *mime_tweaks;
   GHashTable                 *memory_index;
@@ -1163,7 +1162,7 @@ desktop_file_dir_unindexed_mime_lookup (DesktopFileDir *dir,
 
           if (!desktop_file_dir_app_name_is_masked (dir, app_name) &&
               !array_contains (blacklist, app_name) && !array_contains (hits, app_name))
-            g_ptr_array_add (hits, g_strdup (app_name));
+            g_ptr_array_add (hits, app_name);
         }
     }
 
@@ -1198,7 +1197,7 @@ desktop_file_dir_unindexed_default_lookup (DesktopFileDir *dir,
       gchar *app_name = tweaks->defaults[i];
 
       if (!array_contains (results, app_name))
-        g_ptr_array_add (results, g_strdup (app_name));
+        g_ptr_array_add (results, app_name);
     }
 }
 
@@ -1335,13 +1334,8 @@ desktop_file_dir_init (DesktopFileDir *dir)
    * does (and we catch the unlikely race), the only degradation is that
    * we will fall back to polling.
    */
-  dir->monitor = g_local_directory_monitor_new_in_worker (watch_dir, G_FILE_MONITOR_NONE, NULL);
-
-  if (dir->monitor)
-    {
-      g_signal_connect (dir->monitor, "changed", G_CALLBACK (desktop_file_dir_changed), dir);
-      g_local_directory_monitor_start (dir->monitor);
-    }
+  dir->monitor = g_local_file_monitor_new_in_worker (watch_dir, TRUE, G_FILE_MONITOR_NONE,
+                                                     desktop_file_dir_changed, dir, NULL);
 
   desktop_file_dir_unindexed_init (dir);
 
@@ -2675,7 +2669,7 @@ g_desktop_app_info_launch_uris_with_spawn (GDesktopAppInfo            *info,
       GPid pid;
       GList *launched_uris;
       GList *iter;
-      char *display, *sn_id = NULL;
+      char *sn_id = NULL;
 
       old_uris = uris;
       if (!expand_application_parameters (info, exec_line, &uris, &argc, &argv, error))
@@ -2714,17 +2708,10 @@ g_desktop_app_info_launch_uris_with_spawn (GDesktopAppInfo            *info,
           data.pid_envvar = NULL;
         }
 
-      display = NULL;
       sn_id = NULL;
       if (launch_context)
         {
           GList *launched_files = create_files_for_uris (launched_uris);
-
-          display = g_app_launch_context_get_display (launch_context,
-                                                      G_APP_INFO (info),
-                                                      launched_files);
-          if (display)
-            envp = g_environ_setenv (envp, "DISPLAY", display, TRUE);
 
           if (info->startup_notify)
             {
@@ -2750,7 +2737,6 @@ g_desktop_app_info_launch_uris_with_spawn (GDesktopAppInfo            *info,
           if (sn_id)
             g_app_launch_context_launch_failed (launch_context, sn_id);
 
-          g_free (display);
           g_free (sn_id);
           g_list_free (launched_uris);
 
@@ -2777,11 +2763,10 @@ g_desktop_app_info_launch_uris_with_spawn (GDesktopAppInfo            *info,
       notify_desktop_launch (session_bus,
                              info,
                              pid,
-                             display,
+                             NULL,
                              sn_id,
                              launched_uris);
 
-      g_free (display);
       g_free (sn_id);
       g_list_free (launched_uris);
 
@@ -3434,6 +3419,7 @@ run_update_command (char *command,
              * chance of debugging it.
              */
             g_warning ("%s", error->message);
+            g_error_free (error);
           }
 
         g_free (argv[1]);
@@ -3844,6 +3830,10 @@ g_desktop_app_info_get_desktop_ids_for_content_type (const gchar *content_type,
     for (j = 0; j < n_desktop_file_dirs; j++)
       desktop_file_dir_mime_lookup (&desktop_file_dirs[j], types[i], hits, blacklist);
 
+  /* We will keep the hits past unlocking, so we must dup them */
+  for (i = 0; i < hits->len; i++)
+    hits->pdata[i] = g_strdup (hits->pdata[i]);
+
   desktop_file_dirs_unlock ();
 
   g_ptr_array_add (hits, NULL);
@@ -3852,30 +3842,6 @@ g_desktop_app_info_get_desktop_ids_for_content_type (const gchar *content_type,
   g_strfreev (types);
 
   return (gchar **) g_ptr_array_free (hits, FALSE);
-}
-
-static gchar **
-g_desktop_app_info_get_defaults_for_content_type (const gchar *content_type)
-{
-  GPtrArray *results;
-  gchar **types;
-  gint i, j;
-
-  types = get_list_of_mimetypes (content_type, TRUE);
-  results = g_ptr_array_new ();
-
-  desktop_file_dirs_lock ();
-
-  for (i = 0; types[i]; i++)
-    for (j = 0; j < n_desktop_file_dirs; j++)
-      desktop_file_dir_default_lookup (&desktop_file_dirs[j], types[i], results);
-
-  desktop_file_dirs_unlock ();
-
-  g_ptr_array_add (results, NULL);
-  g_strfreev (types);
-
-  return (gchar **) g_ptr_array_free (results, FALSE);
 }
 
 /**
@@ -4045,56 +4011,63 @@ GAppInfo *
 g_app_info_get_default_for_type (const char *content_type,
                                  gboolean    must_support_uris)
 {
-  gchar **desktop_ids;
+  GPtrArray *blacklist;
+  GPtrArray *results;
   GAppInfo *info;
-  gint i;
+  gchar **types;
+  gint i, j, k;
 
   g_return_val_if_fail (content_type != NULL, NULL);
 
-  desktop_ids = g_desktop_app_info_get_defaults_for_content_type (content_type);
+  types = get_list_of_mimetypes (content_type, TRUE);
 
+  blacklist = g_ptr_array_new ();
+  results = g_ptr_array_new ();
   info = NULL;
-  for (i = 0; desktop_ids[i]; i++)
+
+  desktop_file_dirs_lock ();
+
+  for (i = 0; types[i]; i++)
     {
-      info = (GAppInfo *) g_desktop_app_info_new (desktop_ids[i]);
+      /* Collect all the default apps for this type */
+      for (j = 0; j < n_desktop_file_dirs; j++)
+        desktop_file_dir_default_lookup (&desktop_file_dirs[j], types[i], results);
 
-      if (info)
+      /* Consider the associations as well... */
+      for (j = 0; j < n_desktop_file_dirs; j++)
+        desktop_file_dir_mime_lookup (&desktop_file_dirs[j], types[i], results, blacklist);
+
+      /* (If any), see if one of those apps is installed... */
+      for (j = 0; j < results->len; j++)
         {
-          if (!must_support_uris || g_app_info_supports_uris (info))
-            break;
+          const gchar *desktop_id = g_ptr_array_index (results, j);
 
-          g_object_unref (info);
-          info = NULL;
-        }
-    }
-
-  g_strfreev (desktop_ids);
-
-  /* If we can't find a default app for this content type, pick one from
-   * the list of all supported apps.  This will be ordered by the user's
-   * preference and by "recommended" apps first, so the first one we
-   * find is probably the best fallback.
-   */
-  if (info == NULL)
-    {
-      desktop_ids = g_desktop_app_info_get_desktop_ids_for_content_type (content_type, TRUE);
-
-      for (i = 0; desktop_ids[i]; i++)
-        {
-          info = (GAppInfo *) g_desktop_app_info_new (desktop_ids[i]);
-
-          if (info)
+          for (k = 0; k < n_desktop_file_dirs; k++)
             {
-              if (!must_support_uris || g_app_info_supports_uris (info))
-                break;
+              info = (GAppInfo *) desktop_file_dir_get_app (&desktop_file_dirs[k], desktop_id);
 
-              g_object_unref (info);
-              info = NULL;
+              if (info)
+                {
+                  if (!must_support_uris || g_app_info_supports_uris (info))
+                    goto out;
+
+                  g_clear_object (&info);
+                }
             }
         }
 
-      g_strfreev (desktop_ids);
+      /* Reset the list, ready to try again with the next (parent)
+       * mimetype, but keep the blacklist in place.
+       */
+      g_ptr_array_set_size (results, 0);
     }
+
+out:
+  desktop_file_dirs_unlock ();
+
+  g_ptr_array_unref (blacklist);
+  g_ptr_array_unref (results);
+  g_strfreev (types);
 
   return info;
 }
