@@ -2030,8 +2030,9 @@ g_kdbus_decode_dbus_msg (GKDBusWorker           *worker,
            should be implemented in the future */
         case KDBUS_ITEM_TIMESTAMP:
           {
-            g_print ("time: seq %llu mon %llu real %llu\n",
-                     item->timestamp.seqnum, item->timestamp.monotonic_ns, item->timestamp.realtime_ns);
+            /* g_print ("time: seq %llu mon %llu real %llu\n",
+                     item->timestamp.seqnum, item->timestamp.monotonic_ns, item->timestamp.realtime_ns); */
+
             //g_dbus_message_set_timestamp (message, item->timestamp.monotonic_ns / 1000);
             //g_dbus_message_set_serial (message, item->timestamp.seqnum);
             break;
@@ -2039,9 +2040,9 @@ g_kdbus_decode_dbus_msg (GKDBusWorker           *worker,
 
         case KDBUS_ITEM_CREDS:
           {
-            g_print ("creds: u%llu eu %llu su%llu fsu%llu g%llu eg%llu sg%llu fsg%llu\n",
+            /* g_print ("creds: u%llu eu %llu su%llu fsu%llu g%llu eg%llu sg%llu fsg%llu\n",
                      item->creds.uid, item->creds.euid, item->creds.suid, item->creds.fsuid,
-                     item->creds.gid, item->creds.egid, item->creds.sgid, item->creds.fsgid);
+                     item->creds.gid, item->creds.egid, item->creds.sgid, item->creds.fsgid); */
             break;
           }
 
@@ -2058,7 +2059,7 @@ g_kdbus_decode_dbus_msg (GKDBusWorker           *worker,
         case KDBUS_ITEM_AUXGROUPS:
         case KDBUS_ITEM_OWNED_NAME:
         case KDBUS_ITEM_NAME:
-          g_print ("unhandled %04x\n", (int) item->type);
+          //g_print ("unhandled %04x\n", (int) item->type);
           break;
 
         default:
@@ -2143,8 +2144,6 @@ again:
                      g_strerror (errno));
         return -1;
       }
-
-    g_print ("but sometimes that's okay\n");
 
    msg = (struct kdbus_msg *)((guint8 *)kdbus->kdbus_buffer + recv.msg.offset);
 
@@ -2323,6 +2322,7 @@ _g_kdbus_send (GKDBusWorker        *kdbus,
   struct kdbus_msg *msg = alloca (KDBUS_MSG_MAX_SIZE);
   GVariantVectors body_vectors;
   struct kdbus_cmd_send send;
+  const gchar *dst_name;
 
   g_return_val_if_fail (G_IS_KDBUS_WORKER (kdbus), -1);
 
@@ -2335,8 +2335,6 @@ _g_kdbus_send (GKDBusWorker        *kdbus,
 
   /* Message destination */
   {
-    const gchar *dst_name;
-
     dst_name = g_dbus_message_get_destination (message);
 
     if (dst_name != NULL)
@@ -2526,7 +2524,6 @@ _g_kdbus_send (GKDBusWorker        *kdbus,
   else
     msg->cookie_reply = g_dbus_message_get_reply_serial(message);
 
-
   /*
   if (dst_id == KDBUS_DST_ID_BROADCAST)
     {
@@ -2544,57 +2541,23 @@ _g_kdbus_send (GKDBusWorker        *kdbus,
   /*
    * send message
    */
-//again:
   if (ioctl(kdbus->fd, KDBUS_CMD_SEND, &send))
     {
-/*
-      GString *error_name;
-      error_name = g_string_new (NULL);
-
-      if(errno == EINTR)
+      if (errno == ENXIO || errno == ESRCH)
         {
-          g_string_free (error_name,TRUE);
-          goto again;
+          g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN,
+                       "Destination '%s' not known", dst_name);
         }
-      else if (errno == ENXIO)
+      else if (errno == EADDRNOTAVAIL)
         {
-          g_string_printf (error_name, "Name %s does not exist", g_dbus_message_get_destination(dbus_msg));
-          g_kdbus_generate_local_error (worker,
-                                        dbus_msg,
-                                        g_variant_new ("(s)",error_name->str),
-                                        G_DBUS_ERROR_SERVICE_UNKNOWN);
-          g_string_free (error_name,TRUE);
-          return 0;
+          g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN,
+                       "No support for activation for name: %s", dst_name);
         }
-      else if ((errno == ESRCH) || (errno == EADDRNOTAVAIL))
+      else
         {
-          if (kmsg->flags & KDBUS_MSG_FLAGS_NO_AUTO_START)
-            {
-              g_string_printf (error_name, "Name %s does not exist", g_dbus_message_get_destination(dbus_msg));
-              g_kdbus_generate_local_error (worker,
-                                            dbus_msg,
-                                            g_variant_new ("(s)",error_name->str),
-                                            G_DBUS_ERROR_SERVICE_UNKNOWN);
-              g_string_free (error_name,TRUE);
-              return 0;
-            }
-          else
-            {
-              g_string_printf (error_name, "The name %s was not provided by any .service files", g_dbus_message_get_destination(dbus_msg));
-              g_kdbus_generate_local_error (worker,
-                                            dbus_msg,
-                                            g_variant_new ("(s)",error_name->str),
-                                            G_DBUS_ERROR_SERVICE_UNKNOWN);
-              g_string_free (error_name,TRUE);
-              return 0;
-            }
+          g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN,
+                       "No support for activation for name: %s", dst_name);
         }
-
-      g_print ("[KDBUS] ioctl error sending kdbus message:%d (%m)\n",errno);
-      g_set_error (error, G_IO_ERROR, g_io_error_from_errno(errno), _("Error sending message - KDBUS_CMD_MSG_SEND error"));
-*/
-      perror("ioctl send");
-      g_error ("IOCTL SEND: %d\n",errno);
       return FALSE;
     }
 
