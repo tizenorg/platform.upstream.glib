@@ -2128,33 +2128,38 @@ g_dbus_connection_send_message_unlocked (GDBusConnection   *connection,
                        error))
     goto out;
 
-  blob = g_dbus_message_to_blob (message,
-                                 &blob_size,
-                                 connection->capabilities,
-                                 error);
-
-  if (blob == NULL)
-    goto out;
-
   if (!(flags & G_DBUS_SEND_MESSAGE_FLAGS_PRESERVE_SERIAL))
     g_dbus_message_set_serial (message, ++connection->last_serial);
 
   serial_to_use = g_dbus_message_get_serial (message);
 
-  g_dbus_message_lock (message);
-
-  switch (blob[0])
+  /*
+   * serializes message to a blob
+   */
+  if (connection->worker)
     {
-    case 'l':
-      ((guint32 *) blob)[2] = GUINT32_TO_LE (serial_to_use);
-      break;
-    case 'B':
-      ((guint32 *) blob)[2] = GUINT32_TO_BE (serial_to_use);
-      break;
-    default:
-      g_assert_not_reached ();
-      break;
+      blob = g_dbus_message_to_blob (message,
+                                     &blob_size,
+                                     connection->capabilities,
+                                     error);
+      if (blob == NULL)
+        goto out;
+
+      switch (blob[0])
+        {
+        case 'l':
+          ((guint32 *) blob)[2] = GUINT32_TO_LE (serial_to_use);
+          break;
+        case 'B':
+          ((guint32 *) blob)[2] = GUINT32_TO_BE (serial_to_use);
+          break;
+        default:
+          g_assert_not_reached ();
+          break;
+        }
     }
+
+  g_dbus_message_lock (message);
 
 #if 0
   g_printerr ("Writing message of %" G_GSIZE_FORMAT " bytes (serial %d) on %p:\n",
@@ -2178,17 +2183,17 @@ g_dbus_connection_send_message_unlocked (GDBusConnection   *connection,
                         g_thread_self (),
                         GUINT_TO_POINTER (serial_to_use));
 
+  ret = TRUE;
+
   if (connection->worker)
-  _g_dbus_worker_send_message (connection->worker,
-                               message,
-                               (gchar*) blob,
-                               blob_size);
+    _g_dbus_worker_send_message (connection->worker,
+                                 message,
+                                 (gchar*) blob,
+                                 blob_size);
   else
-  g_kdbus_worker_send_message (connection->kdbus_worker, message, error);
+    ret = g_kdbus_worker_send_message (connection->kdbus_worker, message, error);
 
   blob = NULL; /* since _g_dbus_worker_send_message() steals the blob */
-
-  ret = TRUE;
 
  out:
   g_free (blob);
