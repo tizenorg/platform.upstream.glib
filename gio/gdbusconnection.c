@@ -2712,7 +2712,12 @@ g_dbus_connection_send_message_with_reply_sync (GDBusConnection        *connecti
   g_return_val_if_fail (error == NULL || *error == NULL, NULL);
 
   data = g_new0 (SendMessageSyncData, 1);
-  data->context = g_main_context_new ();
+
+  if (connection->kdbus_worker)
+    data->context = g_main_context_ref_thread_default ();
+  else
+     data->context = g_main_context_new ();
+
   data->loop = g_main_loop_new (data->context, FALSE);
 
   g_main_context_push_thread_default (data->context);
