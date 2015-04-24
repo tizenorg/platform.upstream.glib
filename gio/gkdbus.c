@@ -610,7 +610,7 @@ g_kdbus_free_data (GKDBusWorker      *kdbus,
 
   ret = ioctl (kdbus->fd, KDBUS_CMD_FREE, &cmd);
   if (ret < 0)
-      return FALSE;
+    return FALSE;
 
   return TRUE;
 }
@@ -1842,9 +1842,41 @@ g_kdbus_setup_bloom (GKDBusWorker                     *worker,
 }
 
 
-/*
- * TODO: g_kdbus_NameOwnerChanged_generate, g_kdbus_KernelMethodError_generate
+/**
+ *
+ *
  */
+static void
+g_kdbus_translate_id_change (GKDBusWorker       *worker,
+                             struct kdbus_item  *item)
+{
+  g_error ("TODO: translate_id_change\n");
+}
+
+
+/**
+ *
+ *
+ */
+static void
+g_kdbus_translate_name_change (GKDBusWorker       *worker,
+                               struct kdbus_item  *item)
+{
+  g_error ("TODO: translate_name_change\n");
+}
+
+
+/**
+ *
+ *
+ */
+static void
+g_kdbus_translate_kernel_reply (GKDBusWorker       *worker,
+                                struct kdbus_item  *item)
+{
+  g_error ("TODO: translate_kernel_reply\n");
+}
+
 
 /**
  * g_kdbus_decode_kernel_msg:
@@ -1862,17 +1894,18 @@ g_kdbus_decode_kernel_msg (GKDBusWorker           *worker,
         {
           case KDBUS_ITEM_ID_ADD:
           case KDBUS_ITEM_ID_REMOVE:
+            g_kdbus_translate_id_change (worker, item);
+            break;
+
           case KDBUS_ITEM_NAME_ADD:
           case KDBUS_ITEM_NAME_REMOVE:
           case KDBUS_ITEM_NAME_CHANGE:
-            //size = g_kdbus_NameOwnerChanged_generate (worker, item);
-            g_error ("'NameOwnerChanged'");
+            g_kdbus_translate_name_change (worker, item);
             break;
 
           case KDBUS_ITEM_REPLY_TIMEOUT:
           case KDBUS_ITEM_REPLY_DEAD:
-            //size = g_kdbus_KernelMethodError_generate (worker, item);
-            g_error ("'KernelMethodError'");
+            g_kdbus_translate_kernel_reply (worker, item);
             break;
 
           default:
@@ -1892,8 +1925,6 @@ g_kdbus_decode_kernel_msg (GKDBusWorker           *worker,
     g_string_printf (worker->msg_destination, ":1.%" G_GUINT64_FORMAT, (guint64) worker->unique_id);
   else
    g_string_printf (worker->msg_destination, ":1.%" G_GUINT64_FORMAT, (guint64) worker->kmsg->dst_id);
-
-  return size;
 #endif
 }
 
@@ -2097,7 +2128,7 @@ g_kdbus_decode_dbus_msg (GKDBusWorker           *worker,
   g_dbus_message_set_serial (message, serial);
   g_dbus_message_set_message_type (message, type);
 
-  g_print ("Received:\n%s\n", g_dbus_message_print (message, 2));
+  //g_print ("Received:\n%s\n", g_dbus_message_print (message, 2));
 
   (* worker->message_received_callback) (message, worker->user_data);
 
@@ -2160,9 +2191,9 @@ again:
        return -1;
      }
 
-  ioctl(kdbus->fd, KDBUS_CMD_FREE, &recv.msg.offset);
+  g_kdbus_free_data (kdbus, recv.msg.offset);
 
-   return 0;
+  return 0;
 }
 
 static gboolean
@@ -2553,10 +2584,15 @@ _g_kdbus_send (GKDBusWorker        *kdbus,
           g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN,
                        "No support for activation for name: %s", dst_name);
         }
+      else if (errno == EXFULL)
+        {
+          g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_LIMITS_EXCEEDED,
+                       "The memory pool of the receiver is full");
+        }
       else
         {
-          g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN,
-                       "No support for activation for name: %s", dst_name);
+          g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_FAILED,
+                       "%s", strerror(errno));
         }
       return FALSE;
     }
