@@ -1384,7 +1384,7 @@ g_kdbus_bloom_add_prefixes (GKDBusWorker  *worker,
 void
 _g_kdbus_AddMatch (GKDBusWorker  *worker,
                    const gchar   *match_rule,
-                   guint          cookie)
+                   guint64        cookie)
 {
   Match *match;
   MatchElement *element;
@@ -1433,7 +1433,7 @@ _g_kdbus_AddMatch (GKDBusWorker  *worker,
               }
             else
               {
-                g_critical ("Error while adding a match: %d", cookie);
+                g_critical ("Error while adding a match");
                 match_free (match);
                 return;
               }
@@ -1510,7 +1510,7 @@ _g_kdbus_AddMatch (GKDBusWorker  *worker,
 
   ret = ioctl(worker->fd, KDBUS_CMD_MATCH_ADD, cmd);
   if (ret < 0)
-    g_critical ("Error while adding a match: %d", cookie);
+    g_critical ("Error while adding a match: %d", (int) errno);
 
   match_free (match);
 }
@@ -1522,7 +1522,7 @@ _g_kdbus_AddMatch (GKDBusWorker  *worker,
  */
 void
 _g_kdbus_RemoveMatch (GKDBusWorker  *worker,
-                      guint          cookie)
+                      guint64        cookie)
 {
   struct kdbus_cmd_match cmd = {
     .size = sizeof(cmd),
@@ -1532,7 +1532,7 @@ _g_kdbus_RemoveMatch (GKDBusWorker  *worker,
 
   ret = ioctl(worker->fd, KDBUS_CMD_MATCH_REMOVE, &cmd);
   if (ret < 0)
-    g_warning ("Error while removing a match: %d\n", (int) errno);
+    g_warning ("Error while removing a match: %d\n", errno);
 }
 
 
@@ -1542,19 +1542,23 @@ _g_kdbus_RemoveMatch (GKDBusWorker  *worker,
  */
 static void
 _g_kdbus_subscribe_name_owner_changed (GKDBusWorker  *worker,
-                                       const gchar      *name,
-                                       const gchar      *old_name,
-                                       const gchar      *new_name,
-                                       guint             cookie)
+                                       const gchar   *name,
+                                       const gchar   *old_name,
+                                       const gchar   *new_name,
+                                       guint          cookie)
 {
   struct kdbus_item *item;
   struct kdbus_cmd_match *cmd;
   gssize size, len;
   gint ret;
-  guint64 old_id = 0; /* XXX why? */
+  guint64 old_id = 0;
   guint64 new_id = KDBUS_MATCH_ID_ANY;
 
-  len = strlen(name) + 1;
+  if (name)
+    len = strlen(name) + 1;
+  else
+    len = 0;
+
   size = KDBUS_ALIGN8(G_STRUCT_OFFSET (struct kdbus_cmd_match, items) +
                       G_STRUCT_OFFSET (struct kdbus_item, name_change) +
                       G_STRUCT_OFFSET (struct kdbus_notify_name_change, name) + len);
@@ -1564,26 +1568,26 @@ _g_kdbus_subscribe_name_owner_changed (GKDBusWorker  *worker,
   cmd->cookie = cookie;
   item = cmd->items;
 
-  if (old_name[0] == 0)
+  if (old_name == NULL)
     {
       old_id = KDBUS_MATCH_ID_ANY;
     }
   else
     {
       if (g_dbus_is_unique_name(old_name))
-        old_id = old_id+3;
+        old_id = strtoull (old_name + 3, NULL, 10);
       else
         return;
     }
 
-  if (new_name[0] == 0)
+  if (new_name == NULL)
     {
       new_id = KDBUS_MATCH_ID_ANY;
     }
   else
     {
       if (g_dbus_is_unique_name(new_name))
-        new_id = new_id+3;
+        new_id = strtoull (new_name + 3, NULL, 10);
       else
         return;
     }
@@ -1597,7 +1601,10 @@ _g_kdbus_subscribe_name_owner_changed (GKDBusWorker  *worker,
   item->type = KDBUS_ITEM_NAME_CHANGE;
   item->name_change.old_id.id = old_id;
   item->name_change.new_id.id = new_id;
-  memcpy(item->name_change.name, name, len);
+
+  if (name)
+    memcpy(item->name_change.name, name, len);
+
   item->size = G_STRUCT_OFFSET (struct kdbus_item, name_change) +
                G_STRUCT_OFFSET(struct kdbus_notify_name_change, name) + len;
   item = KDBUS_ITEM_NEXT(item);
@@ -1614,20 +1621,24 @@ _g_kdbus_subscribe_name_owner_changed (GKDBusWorker  *worker,
  */
 void
 _g_kdbus_subscribe_name_acquired (GKDBusWorker  *worker,
-                                  const gchar      *name)
+                                  const gchar   *name,
+                                  guint64        cookie)
 {
   struct kdbus_item *item;
   struct kdbus_cmd_match *cmd;
   gssize size, len;
-  guint64 cookie;
   gint ret;
 
-  len = strlen(name) + 1;
+  g_print ("Subscribe 'NameAcquired': name - %s ; cookie - %d\n", name, (int)cookie);
+  if (name)
+    len = strlen(name) + 1;
+  else
+    len = 0;
+
   size = KDBUS_ALIGN8(G_STRUCT_OFFSET (struct kdbus_cmd_match, items) +
                       G_STRUCT_OFFSET (struct kdbus_item, name_change) +
                       G_STRUCT_OFFSET (struct kdbus_notify_name_change, name) + len);
 
-  cookie = 0xbeefbeefbeefbeef;
   cmd = g_alloca0 (size);
   cmd->size = size;
   cmd->cookie = cookie;
@@ -1637,7 +1648,10 @@ _g_kdbus_subscribe_name_acquired (GKDBusWorker  *worker,
   item->type = KDBUS_ITEM_NAME_ADD;
   item->name_change.old_id.id = KDBUS_MATCH_ID_ANY;
   item->name_change.new_id.id = worker->unique_id;
-  memcpy(item->name_change.name, name, len);
+
+  if (name)
+    memcpy(item->name_change.name, name, len);
+
   item->size = G_STRUCT_OFFSET (struct kdbus_item, name_change) +
                G_STRUCT_OFFSET(struct kdbus_notify_name_change, name) + len;
   item = KDBUS_ITEM_NEXT(item);
@@ -1646,7 +1660,7 @@ _g_kdbus_subscribe_name_acquired (GKDBusWorker  *worker,
   if (ret < 0)
     g_warning ("ERROR - %d\n", (int) errno);
 
-  _g_kdbus_subscribe_name_owner_changed (worker, name, "", worker->unique_name, cookie);
+  _g_kdbus_subscribe_name_owner_changed (worker, name, NULL, worker->unique_name, cookie);
 }
 
 
@@ -1656,20 +1670,24 @@ _g_kdbus_subscribe_name_acquired (GKDBusWorker  *worker,
  */
 void
 _g_kdbus_subscribe_name_lost (GKDBusWorker  *worker,
-                              const gchar      *name)
+                              const gchar   *name,
+                              guint64        cookie)
 {
   struct kdbus_item *item;
   struct kdbus_cmd_match *cmd;
   gssize size, len;
-  guint64 cookie;
   gint ret;
 
-  len = strlen(name) + 1;
+  g_print ("Subscribe 'NameLost': name - %s ; cookie - %d\n", name, (int)cookie);
+  if (name)
+    len = strlen(name) + 1;
+  else
+    len = 0;
+
   size = KDBUS_ALIGN8(G_STRUCT_OFFSET (struct kdbus_cmd_match, items) +
                       G_STRUCT_OFFSET (struct kdbus_item, name_change) +
                       G_STRUCT_OFFSET (struct kdbus_notify_name_change, name) + len);
 
-  cookie = 0xdeafdeafdeafdeaf;
   cmd = g_alloca0 (size);
   cmd->size = size;
   cmd->cookie = cookie;
@@ -1679,7 +1697,10 @@ _g_kdbus_subscribe_name_lost (GKDBusWorker  *worker,
   item->type = KDBUS_ITEM_NAME_REMOVE;
   item->name_change.old_id.id = worker->unique_id;
   item->name_change.new_id.id = KDBUS_MATCH_ID_ANY;
-  memcpy(item->name_change.name, name, len);
+
+  if (name)
+    memcpy(item->name_change.name, name, len);
+
   item->size = G_STRUCT_OFFSET (struct kdbus_item, name_change) +
                G_STRUCT_OFFSET(struct kdbus_notify_name_change, name) + len;
   item = KDBUS_ITEM_NEXT(item);
@@ -1688,7 +1709,7 @@ _g_kdbus_subscribe_name_lost (GKDBusWorker  *worker,
   if (ret < 0)
     g_warning ("ERROR - %d\n", (int) errno);
 
-  _g_kdbus_subscribe_name_owner_changed (worker, name, worker->unique_name, "", cookie);
+  _g_kdbus_subscribe_name_owner_changed (worker, name, worker->unique_name, NULL, cookie);
 }
 
 
@@ -1697,11 +1718,10 @@ _g_kdbus_subscribe_name_lost (GKDBusWorker  *worker,
  *
  */
 void
-_g_kdbus_unsubscribe_name_acquired (GKDBusWorker  *worker)
+_g_kdbus_unsubscribe_name_acquired (GKDBusWorker  *worker,
+                                    guint64        cookie)
 {
-  guint64 cookie;
-
-  cookie = 0xbeefbeefbeefbeef;
+  g_print ("Unsubscribe 'NameAcquired': cookie - %d\n", (int)cookie);
   _g_kdbus_RemoveMatch (worker, cookie);
 }
 
@@ -1711,11 +1731,10 @@ _g_kdbus_unsubscribe_name_acquired (GKDBusWorker  *worker)
  *
  */
 void
-_g_kdbus_unsubscribe_name_lost (GKDBusWorker  *worker)
+_g_kdbus_unsubscribe_name_lost (GKDBusWorker  *worker,
+                                guint64        cookie)
 {
-  guint64 cookie;
-
-  cookie = 0xdeafdeafdeafdeaf;
+  g_print ("Unsubscribe 'NameLost': cookie - %d\n", (int)cookie);
   _g_kdbus_RemoveMatch (worker, cookie);
 }
 
@@ -1862,7 +1881,46 @@ static void
 g_kdbus_translate_name_change (GKDBusWorker       *worker,
                                struct kdbus_item  *item)
 {
-  g_error ("TODO: translate_name_change\n");
+  GDBusMessage *signal_message;
+
+  signal_message = NULL;
+
+  /* NameAcquired */
+  if ((item->type == KDBUS_ITEM_NAME_ADD) ||
+      (item->type == KDBUS_ITEM_NAME_CHANGE && ((guint64)item->name_change.new_id.id == worker->unique_id)))
+    {
+      signal_message = g_dbus_message_new_signal ("/org/freedesktop/DBus",
+                                                  "org.freedesktop.DBus",
+                                                  "NameAcquired");
+
+      g_dbus_message_set_sender (signal_message, "org.freedesktop.DBus");
+      g_dbus_message_set_body (signal_message,
+                               g_variant_new ("(s)", item->name_change.name));
+
+      (* worker->message_received_callback) (signal_message, worker->user_data);
+      g_object_unref (signal_message);
+    }
+
+  /* NameLost */
+  if ((item->type == KDBUS_ITEM_NAME_REMOVE) ||
+      (item->type == KDBUS_ITEM_NAME_CHANGE && ((guint64)item->name_change.old_id.id == worker->unique_id)))
+    {
+      GDBusMessage *signal_message;
+
+      signal_message = g_dbus_message_new_signal ("/org/freedesktop/DBus",
+                                                  "org.freedesktop.DBus",
+                                                  "NameLost");
+
+      g_dbus_message_set_sender (signal_message, "org.freedesktop.DBus");
+      g_dbus_message_set_body (signal_message,
+                               g_variant_new ("(s)", item->name_change.name));
+
+      (* worker->message_received_callback) (signal_message, worker->user_data);
+      g_object_unref (signal_message);
+    }
+
+  /* NameOwnerChanged */
+  /* TODO */
 }
 
 
@@ -1906,6 +1964,9 @@ g_kdbus_decode_kernel_msg (GKDBusWorker           *worker,
           case KDBUS_ITEM_REPLY_TIMEOUT:
           case KDBUS_ITEM_REPLY_DEAD:
             g_kdbus_translate_kernel_reply (worker, item);
+            break;
+
+          case KDBUS_ITEM_TIMESTAMP:
             break;
 
           default:

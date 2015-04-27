@@ -4067,20 +4067,29 @@ g_dbus_connection_signal_subscribe (GDBusConnection     *connection,
    */
   if (connection->flags & G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION)
     {
-      if (!is_signal_data_for_name_lost_or_acquired (signal_data))
-        if (connection->kdbus_worker)
-          _g_kdbus_AddMatch (connection->kdbus_worker, signal_data->rule, subscriber.id);
-        else
-          add_match_rule (connection, signal_data->rule);
-      else
+      if (connection->kdbus_worker)
         {
-          if (connection->kdbus_worker)
+          if (g_strcmp0 (signal_data->sender_unique_name, "org.freedesktop.DBus") == 0 &&
+              g_strcmp0 (signal_data->interface_name, "org.freedesktop.DBus") == 0 &&
+              g_strcmp0 (signal_data->object_path, "/org/freedesktop/DBus") == 0 &&
+              (g_strcmp0 (signal_data->member, "NameLost") == 0 ||
+               g_strcmp0 (signal_data->member, "NameAcquired") == 0 ||
+               g_strcmp0 (signal_data->member, "NameOwnerChanged") == 0))
             {
               if (g_strcmp0 (signal_data->member, "NameAcquired") == 0)
-                _g_kdbus_subscribe_name_acquired (connection->kdbus_worker, arg0);
+                _g_kdbus_subscribe_name_acquired (connection->kdbus_worker, arg0, (guint64) subscriber.id);
               else if (g_strcmp0 (signal_data->member, "NameLost") == 0)
-                _g_kdbus_subscribe_name_lost (connection->kdbus_worker, arg0);
+                _g_kdbus_subscribe_name_lost (connection->kdbus_worker, arg0, (guint64) subscriber.id);
+              else if (g_strcmp0 (signal_data->member, "NameOwnerChanged") == 0)
+                g_error ("TODO: NameOwnerChanged signal subscription\n");
             }
+          else
+            _g_kdbus_AddMatch (connection->kdbus_worker, signal_data->rule, subscriber.id);
+        }
+      else
+        {
+          if (!is_signal_data_for_name_lost_or_acquired (signal_data))
+            add_match_rule (connection, signal_data->rule);
         }
     }
 
@@ -4176,9 +4185,9 @@ unsubscribe_id_internal (GDBusConnection *connection,
               if (connection->kdbus_worker)
                 {
                   if (g_strcmp0 (signal_data->member, "NameAcquired") == 0)
-                    _g_kdbus_unsubscribe_name_acquired (connection->kdbus_worker);
+                    _g_kdbus_unsubscribe_name_acquired (connection->kdbus_worker, (guint64) subscription_id);
                   else if (g_strcmp0 (signal_data->member, "NameLost") == 0)
-                    _g_kdbus_unsubscribe_name_lost (connection->kdbus_worker);
+                    _g_kdbus_unsubscribe_name_lost (connection->kdbus_worker, (guint64) subscription_id);
                 }
             }
 

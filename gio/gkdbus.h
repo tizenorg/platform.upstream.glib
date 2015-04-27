@@ -117,22 +117,24 @@ GVariant *                              _g_kdbus_GetConnectionUnixUser      (GKD
 
 void                                    _g_kdbus_AddMatch                   (GKDBusWorker     *worker,
                                                                              const gchar      *match_rule,
-                                                                             guint             cookie);
+                                                                             guint64           cookie);
 
 void                                    _g_kdbus_RemoveMatch                (GKDBusWorker     *worker,
-                                                                             guint             cookie);
+                                                                             guint64           cookie);
 
 void                                    _g_kdbus_subscribe_name_acquired    (GKDBusWorker  *worker,
-                                                                             const gchar      *name);
+                                                                             const gchar   *name,
+                                                                             guint64        cookie);
 
 void                                    _g_kdbus_subscribe_name_lost        (GKDBusWorker  *worker,
-                                                                             const gchar      *name);
+                                                                             const gchar   *name,
+                                                                             guint64        cookie);
 
-void                                    _g_kdbus_unsubscribe_name_acquired  (GKDBusWorker  *worker);
+void                                    _g_kdbus_unsubscribe_name_acquired  (GKDBusWorker  *worker,
+                                                                             guint64        cookie);
 
-void                                    _g_kdbus_unsubscribe_name_lost      (GKDBusWorker  *worker);
-
-gchar *                                 _g_kdbus_hexdump_all_items          (GSList           *kdbus_msg_items);
+void                                    _g_kdbus_unsubscribe_name_lost      (GKDBusWorker  *worker,
+                                                                             guint64        cookie);
 
 G_END_DECLS
 
