@@ -375,35 +375,6 @@ process_request_name_reply (Client  *client,
 /* ---------------------------------------------------------------------------------------------------- */
 
 static void
-request_name_cb (GObject      *source_object,
-                 GAsyncResult *res,
-                 gpointer      user_data)
-{
-  Client *client = user_data;
-  GVariant *result;
-  guint32 request_name_reply;
-
-  request_name_reply = 0;
-  result = NULL;
-
-  /* don't use client->connection - it may be NULL already */
-  result = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source_object),
-                                          res,
-                                          NULL);
-  if (result != NULL)
-    {
-      g_variant_get (result, "(u)", &request_name_reply);
-      g_variant_unref (result);
-    }
-
-  process_request_name_reply (client, request_name_reply);
-
-  client_unref (client);
-}
-
-/* ---------------------------------------------------------------------------------------------------- */
-
-static void
 on_connection_disconnected (GDBusConnection *connection,
                             gboolean         remote_peer_vanished,
                             GError          *error,
