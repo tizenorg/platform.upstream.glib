@@ -554,7 +554,8 @@ g_kdbus_worker_init (GKDBusWorker *kdbus)
 
   kdbus->kdbus_buffer = NULL;
 
-  kdbus->flags = 0; /* KDBUS_HELLO_ACCEPT_FD */
+  //kdbus->flags = 0; /* KDBUS_HELLO_ACCEPT_FD */
+  kdbus->flags = KDBUS_HELLO_ACCEPT_FD;
   kdbus->attach_flags_send = _KDBUS_ATTACH_ALL;
   kdbus->attach_flags_recv = _KDBUS_ATTACH_ALL;
 }
@@ -687,7 +688,8 @@ _g_kdbus_Hello (GKDBusWorker *worker,
                 GError    **error)
 {
   struct kdbus_cmd_hello *cmd;
-  struct kdbus_item *item;
+  struct kdbus_bloom_parameter *bloom;
+  struct kdbus_item *item, *items;
 
   gchar *conn_name;
   size_t size, conn_name_size;
@@ -745,8 +747,23 @@ _g_kdbus_Hello (GKDBusWorker *worker,
   asprintf(&worker->unique_name, ":1.%llu", (unsigned long long) cmd->id);
 
   /* read bloom filters parameters */
-  //worker->bloom_size = (gsize) cmd->bloom.size;
-  //worker->bloom_n_hash = (guint) cmd->bloom.n_hash;
+  bloom = NULL;
+  items = (void*)(worker->kdbus_buffer + cmd->offset);
+  KDBUS_FOREACH(item, items, cmd->items_size)
+    {
+      switch (item->type)
+        {
+          case KDBUS_ITEM_BLOOM_PARAMETER:
+            bloom = &item->bloom_parameter;
+          break;
+        }
+    }
+
+  if (bloom != NULL)
+    {
+      worker->bloom_size = (gsize) bloom->size;
+      worker->bloom_n_hash = (guint) bloom->n_hash;
+    }
 
   return g_variant_new ("(s)", worker->unique_name);
 }
@@ -1293,6 +1310,7 @@ g_kdbus_bloom_add_data (GKDBusWorker  *worker,
   guint64 bit_num;
   guint bytes_num = 0;
   guint cnt_1, cnt_2;
+  guint hash_index = 0;
 
   guint c = 0;
   guint64 p = 0;
@@ -1304,11 +1322,11 @@ g_kdbus_bloom_add_data (GKDBusWorker  *worker,
 
   for (cnt_1 = 0; cnt_1 < (worker->bloom_n_hash); cnt_1++)
     {
-      for (cnt_2 = 0; cnt_2 < bytes_num; cnt_2++)
+      for (cnt_2 = 0, hash_index = 0; cnt_2 < bytes_num; cnt_2++)
         {
           if (c <= 0)
             {
-              _g_siphash24(hash, data, n, hash_keys[cnt_1++]);
+              _g_siphash24(hash, data, n, hash_keys[hash_index++]);
               c += 8;
             }
 
@@ -1530,6 +1548,7 @@ _g_kdbus_RemoveMatch (GKDBusWorker  *worker,
   };
   gint ret;
 
+  g_print ("Unsubscribe match entry with cookie - %d\n", (int)cookie);
   ret = ioctl(worker->fd, KDBUS_CMD_MATCH_REMOVE, &cmd);
   if (ret < 0)
     g_warning ("Error while removing a match: %d\n", errno);
@@ -1537,15 +1556,15 @@ _g_kdbus_RemoveMatch (GKDBusWorker  *worker,
 
 
 /**
- * _g_kdbus_subscribe_name_acquired:
+ * _g_kdbus_subscribe_name_owner_changed_internal:
  *
  */
 static void
-_g_kdbus_subscribe_name_owner_changed (GKDBusWorker  *worker,
-                                       const gchar   *name,
-                                       const gchar   *old_name,
-                                       const gchar   *new_name,
-                                       guint          cookie)
+_g_kdbus_subscribe_name_owner_changed_internal (GKDBusWorker  *worker,
+                                                const gchar   *name,
+                                                const gchar   *old_name,
+                                                const gchar   *new_name,
+                                                guint64        cookie)
 {
   struct kdbus_item *item;
   struct kdbus_cmd_match *cmd;
@@ -1660,7 +1679,7 @@ _g_kdbus_subscribe_name_acquired (GKDBusWorker  *worker,
   if (ret < 0)
     g_warning ("ERROR - %d\n", (int) errno);
 
-  _g_kdbus_subscribe_name_owner_changed (worker, name, NULL, worker->unique_name, cookie);
+  _g_kdbus_subscribe_name_owner_changed_internal (worker, name, NULL, worker->unique_name, cookie);
 }
 
 
@@ -1709,55 +1728,20 @@ _g_kdbus_subscribe_name_lost (GKDBusWorker  *worker,
   if (ret < 0)
     g_warning ("ERROR - %d\n", (int) errno);
 
-  _g_kdbus_subscribe_name_owner_changed (worker, name, worker->unique_name, NULL, cookie);
+  _g_kdbus_subscribe_name_owner_changed_internal (worker, name, worker->unique_name, NULL, cookie);
 }
 
 
 /**
- * _g_kdbus_unsubscribe_name_acquired:
+ *
  *
  */
 void
-_g_kdbus_unsubscribe_name_acquired (GKDBusWorker  *worker,
-                                    guint64        cookie)
+_g_kdbus_subscribe_name_owner_changed (GKDBusWorker  *worker,
+                                       const gchar   *name,
+                                       guint64        cookie)
 {
-  g_print ("Unsubscribe 'NameAcquired': cookie - %d\n", (int)cookie);
-  _g_kdbus_RemoveMatch (worker, cookie);
-}
-
-
-/**
- * _g_kdbus_unsubscribe_name_lost:
- *
- */
-void
-_g_kdbus_unsubscribe_name_lost (GKDBusWorker  *worker,
-                                guint64        cookie)
-{
-  g_print ("Unsubscribe 'NameLost': cookie - %d\n", (int)cookie);
-  _g_kdbus_RemoveMatch (worker, cookie);
-}
-
-
-/**
- * g_kdbus_append_payload_bloom:
- *
- */
-static struct kdbus_bloom_filter *
-g_kdbus_append_bloom (struct kdbus_item **item,
-                      gsize               size)
-{
-  struct kdbus_item *bloom_item;
-
-  bloom_item = KDBUS_ALIGN8_PTR(*item);
-  bloom_item->size = G_STRUCT_OFFSET (struct kdbus_item, bloom_filter) +
-                     G_STRUCT_OFFSET (struct kdbus_bloom_filter, data) +
-                     size;
-
-  bloom_item->type = KDBUS_ITEM_BLOOM_FILTER;
-
-  *item = KDBUS_ITEM_NEXT(bloom_item);
-  return &bloom_item->bloom_filter;
+  g_print ("NameOwnerChanged subscription\n");
 }
 
 
@@ -1973,20 +1957,6 @@ g_kdbus_decode_kernel_msg (GKDBusWorker           *worker,
             g_warning ("Unknown field in kernel message - %lld", item->type);
        }
     }
-
-#if 0
-  /* Override information from the user header with data from the kernel */
-  g_string_printf (worker->msg_sender, "org.freedesktop.DBus");
-
-  /* for destination */
-  if (worker->kmsg->dst_id == KDBUS_DST_ID_BROADCAST)
-    /* for broadcast messages we don't have to set destination */
-    ;
-  else if (worker->kmsg->dst_id == KDBUS_DST_ID_NAME)
-    g_string_printf (worker->msg_destination, ":1.%" G_GUINT64_FORMAT, (guint64) worker->unique_id);
-  else
-   g_string_printf (worker->msg_destination, ":1.%" G_GUINT64_FORMAT, (guint64) worker->kmsg->dst_id);
-#endif
 }
 
 
@@ -2174,11 +2144,6 @@ g_kdbus_decode_dbus_msg (GKDBusWorker           *worker,
   parts[1] = g_variant_get_child_value (body, 1);
   g_variant_unref (body);
 
-  body = g_variant_get_variant (parts[1]);
-  g_variant_unref (parts[1]);
-  g_dbus_message_set_body (message, body);
-  g_variant_unref (body);
-
   g_variant_get (parts[0], "(yyyyuta{tv})", &endianness, &type, &flags, &version, NULL, &serial, &fields_iter);
   g_variant_unref (parts[0]);
 
@@ -2188,6 +2153,14 @@ g_kdbus_decode_dbus_msg (GKDBusWorker           *worker,
   g_dbus_message_set_flags (message, flags);
   g_dbus_message_set_serial (message, serial);
   g_dbus_message_set_message_type (message, type);
+
+  //if (g_dbus_message_get_header (message, G_DBUS_MESSAGE_HEADER_FIELD_SIGNATURE) != NULL)
+  //  {
+      body = g_variant_get_variant (parts[1]);
+      g_dbus_message_set_body (message, body);
+      g_variant_unref (body);
+  //  }
+  g_variant_unref (parts[1]);
 
   //g_print ("Received:\n%s\n", g_dbus_message_print (message, 2));
 
@@ -2309,6 +2282,26 @@ g_kdbus_msg_append_payload_memfd (struct kdbus_msg *msg,
   };
 
   return g_kdbus_msg_append_item (msg, KDBUS_ITEM_PAYLOAD_MEMFD, &mfd, sizeof mfd);
+}
+
+static struct kdbus_bloom_filter *
+g_kdbus_msg_append_bloom (struct kdbus_msg *msg,
+                          gsize             size)
+{
+  struct kdbus_item *bloom_item;
+
+  /* align */
+  msg->size += (-msg->size) & 7;
+  bloom_item = (struct kdbus_item *) ((guchar *) msg + msg->size);
+
+  /* set size and type */
+  bloom_item->size = G_STRUCT_OFFSET (struct kdbus_item, bloom_filter) +
+                     G_STRUCT_OFFSET (struct kdbus_bloom_filter, data) +
+                     size;
+  bloom_item->type = KDBUS_ITEM_BLOOM_FILTER;
+
+  msg->size += bloom_item->size;
+  return &bloom_item->bloom_filter;
 }
 
 #if 0
@@ -2616,15 +2609,19 @@ _g_kdbus_send (GKDBusWorker        *kdbus,
   else
     msg->cookie_reply = g_dbus_message_get_reply_serial(message);
 
+  if (g_dbus_message_get_message_type (message) == G_DBUS_MESSAGE_TYPE_SIGNAL)
+    msg->flags |= KDBUS_MSG_SIGNAL;
+
   /*
-  if (dst_id == KDBUS_DST_ID_BROADCAST)
+   *
+   */
+  if (msg->dst_id == KDBUS_DST_ID_BROADCAST)
     {
       struct kdbus_bloom_filter *bloom_filter;
 
-      bloom_filter = g_kdbus_append_bloom (&item, kdbus->bloom_size);
+      bloom_filter = g_kdbus_msg_append_bloom (msg, kdbus->bloom_size);
       g_kdbus_setup_bloom (kdbus, message, bloom_filter);
     }
-    */
 
   send.size = sizeof (send);
   send.flags = 0;
@@ -2652,6 +2649,7 @@ _g_kdbus_send (GKDBusWorker        *kdbus,
         }
       else
         {
+          g_error ("WTF? %d\n", errno);
           g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_FAILED,
                        "%s", strerror(errno));
         }

@@ -130,12 +130,9 @@ void                                    _g_kdbus_subscribe_name_lost        (GKD
                                                                              const gchar   *name,
                                                                              guint64        cookie);
 
-void                                    _g_kdbus_unsubscribe_name_acquired  (GKDBusWorker  *worker,
-                                                                             guint64        cookie);
-
-void                                    _g_kdbus_unsubscribe_name_lost      (GKDBusWorker  *worker,
-                                                                             guint64        cookie);
-
+void                                    _g_kdbus_subscribe_name_owner_changed (GKDBusWorker  *worker,
+                                                                               const gchar   *name,
+                                                                               guint64        cookie);
 G_END_DECLS
 
 #endif /* __G_KDBUS_H__ */
