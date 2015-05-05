@@ -629,7 +629,15 @@ g_dbus_connection_dispose (GObject *object)
 
   G_LOCK (message_bus_lock);
   CONNECTION_LOCK (connection);
-  if (connection->worker != NULL)
+
+  if (connection->kdbus_worker != NULL)
+    {
+      g_kdbus_worker_stop (connection->kdbus_worker);
+      connection->kdbus_worker = NULL;
+      if (alive_connections != NULL)
+        g_warn_if_fail (g_hash_table_remove (alive_connections, connection));
+    }
+  else if (connection->worker != NULL)
     {
       _g_dbus_worker_stop (connection->worker);
       connection->worker = NULL;
@@ -1353,17 +1361,19 @@ g_dbus_connection_flush_sync (GDBusConnection  *connection,
   if (!check_unclosed (connection, 0, error))
     goto out;
 
-  if (connection->kdbus_worker)
+  if (connection->kdbus_worker != NULL)
     {
+      g_kdbus_worker_flush_sync (connection->kdbus_worker);
       ret = TRUE;
-      goto out;
     }
-
-  g_assert (connection->worker != NULL);
-
-  ret = _g_dbus_worker_flush_sync (connection->worker,
-                                   cancellable,
-                                   error);
+  else if (connection->worker != NULL)
+    {
+      ret = _g_dbus_worker_flush_sync (connection->worker,
+                                       cancellable,
+                                       error);
+    }
+  else
+    g_assert_not_reached();
 
  out:
   return ret;

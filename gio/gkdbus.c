@@ -2162,12 +2162,12 @@ g_kdbus_decode_dbus_msg (GKDBusWorker           *worker,
   g_dbus_message_set_serial (message, serial);
   g_dbus_message_set_message_type (message, type);
 
-  //if (g_dbus_message_get_header (message, G_DBUS_MESSAGE_HEADER_FIELD_SIGNATURE) != NULL)
-  //  {
+  if (g_dbus_message_get_header (message, G_DBUS_MESSAGE_HEADER_FIELD_SIGNATURE) != NULL)
+    {
       body = g_variant_get_variant (parts[1]);
       g_dbus_message_set_body (message, body);
       g_variant_unref (body);
-  //  }
+    }
   g_variant_unref (parts[1]);
 
   //g_print ("Received:\n%s\n", g_dbus_message_print (message, 2));
@@ -2747,14 +2747,17 @@ g_kdbus_worker_send_message (GKDBusWorker  *worker,
   return _g_kdbus_send (worker, message, error);
 }
 
-void
-g_kdbus_worker_stop (GKDBusWorker *worker)
-{
-}
-
+/* TODO */
 void
 g_kdbus_worker_flush_sync (GKDBusWorker *worker)
 {
+  g_warning ("TODO: Implement sync flush");
+}
+
+void
+g_kdbus_worker_stop (GKDBusWorker *worker)
+{
+  g_warning ("TODO: Implement worker stop");
 }
 
 void
