@@ -2662,6 +2662,11 @@ _g_kdbus_send (GKDBusWorker        *kdbus,
           g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_LIMITS_EXCEEDED,
                        "The memory pool of the receiver is full");
         }
+      else if (errno == ENOBUFS)
+        {
+          g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_LIMITS_EXCEEDED,
+                       "Too many pending messages on the receiver side");
+        }
       else
         {
           g_error ("WTF? %d\n", errno);
