@@ -764,6 +764,15 @@ _g_kdbus_Hello (GKDBusWorker *worker,
       worker->bloom_size = (gsize) bloom->size;
       worker->bloom_n_hash = (guint) bloom->n_hash;
     }
+  else
+    {
+      g_set_error_literal (error,
+                           G_IO_ERROR,
+                           G_IO_ERROR_FAILED,
+                           _("Can't read bloom filter parameters"));
+      return NULL;
+    }
+
 
   return g_variant_new ("(s)", worker->unique_name);
 }
