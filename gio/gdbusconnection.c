@@ -3002,7 +3002,7 @@ get_offered_capabilities_max (GDBusConnection *connection)
       GDBusCapabilityFlags ret;
       ret = G_DBUS_CAPABILITY_FLAGS_NONE;
 #ifdef G_OS_UNIX
-      //if (G_IS_UNIX_CONNECTION (connection->stream))
+      if (G_IS_UNIX_CONNECTION (connection->stream))
         ret |= G_DBUS_CAPABILITY_FLAGS_UNIX_FD_PASSING;
 #endif
       return ret;
@@ -3089,9 +3089,10 @@ initable_init (GInitable     *initable,
       g_assert_not_reached ();
     }
 
-  /* [KDBUS] Skip authentication process for kdbus transport */
+  /* Skip authentication process for kdbus transport */
   if (connection->kdbus_worker)
     {
+      /* kdbus connection always supports exchanging UNIX file descriptors with the remote peer */
       connection->capabilities |= G_DBUS_CAPABILITY_FLAGS_UNIX_FD_PASSING;
       goto authenticated;
     }

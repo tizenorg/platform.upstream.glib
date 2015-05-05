@@ -554,7 +554,6 @@ g_kdbus_worker_init (GKDBusWorker *kdbus)
 
   kdbus->kdbus_buffer = NULL;
 
-  //kdbus->flags = 0; /* KDBUS_HELLO_ACCEPT_FD */
   kdbus->flags = KDBUS_HELLO_ACCEPT_FD;
   kdbus->attach_flags_send = _KDBUS_ATTACH_ALL;
   kdbus->attach_flags_recv = _KDBUS_ATTACH_ALL;
@@ -2298,15 +2297,20 @@ g_kdbus_msg_append_bloom (struct kdbus_msg *msg,
                           gsize             size)
 {
   struct kdbus_item *bloom_item;
+  gsize bloom_item_size;
+
+  bloom_item_size = G_STRUCT_OFFSET (struct kdbus_item, bloom_filter) +
+                    G_STRUCT_OFFSET (struct kdbus_bloom_filter, data) +
+                    size;
+  if (msg->size + bloom_item_size > KDBUS_MSG_MAX_SIZE)
+    return NULL;
 
   /* align */
   msg->size += (-msg->size) & 7;
   bloom_item = (struct kdbus_item *) ((guchar *) msg + msg->size);
 
   /* set size and type */
-  bloom_item->size = G_STRUCT_OFFSET (struct kdbus_item, bloom_filter) +
-                     G_STRUCT_OFFSET (struct kdbus_bloom_filter, data) +
-                     size;
+  bloom_item->size = bloom_item_size;
   bloom_item->type = KDBUS_ITEM_BLOOM_FILTER;
 
   msg->size += bloom_item->size;
@@ -2622,13 +2626,15 @@ _g_kdbus_send (GKDBusWorker        *kdbus,
     msg->flags |= KDBUS_MSG_SIGNAL;
 
   /*
-   *
+   * append bloom filter item for broadcast signals
    */
   if (msg->dst_id == KDBUS_DST_ID_BROADCAST)
     {
       struct kdbus_bloom_filter *bloom_filter;
 
       bloom_filter = g_kdbus_msg_append_bloom (msg, kdbus->bloom_size);
+      if (bloom_filter == NULL)
+        goto need_compact;
       g_kdbus_setup_bloom (kdbus, message, bloom_filter);
     }
 
