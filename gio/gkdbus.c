@@ -1991,7 +1991,6 @@ g_kdbus_decode_dbus_msg (GKDBusWorker           *worker,
   GVariant *value;
   guint64 serial;
 
-
   message = g_dbus_message_new ();
 
   body_vectors = g_array_new (FALSE, FALSE, sizeof (GVariantVector));
@@ -2162,12 +2161,13 @@ g_kdbus_decode_dbus_msg (GKDBusWorker           *worker,
   g_dbus_message_set_serial (message, serial);
   g_dbus_message_set_message_type (message, type);
 
-  if (g_dbus_message_get_header (message, G_DBUS_MESSAGE_HEADER_FIELD_SIGNATURE) != NULL)
-    {
-      body = g_variant_get_variant (parts[1]);
-      g_dbus_message_set_body (message, body);
-      g_variant_unref (body);
-    }
+  body = g_variant_get_variant (parts[1]);
+  if (!g_variant_is_of_type (body, G_VARIANT_TYPE ("()")))
+    g_dbus_message_set_body (message, body);
+  else
+    g_dbus_message_set_body (message, NULL);
+
+  g_variant_unref (body);
   g_variant_unref (parts[1]);
 
   //g_print ("Received:\n%s\n", g_dbus_message_print (message, 2));
