@@ -2085,9 +2085,30 @@ g_kdbus_translate_name_change (GKDBusWorker       *worker,
  */
 static void
 g_kdbus_translate_kernel_reply (GKDBusWorker       *worker,
+                                struct kdbus_msg   *msg,
                                 struct kdbus_item  *item)
 {
-  g_error ("TODO: translate_kernel_reply\n");
+  GDBusMessage *message;
+
+  message = g_dbus_message_new ();
+
+  g_dbus_message_set_message_type (message, G_DBUS_MESSAGE_TYPE_ERROR);
+  g_dbus_message_set_flags (message, G_DBUS_MESSAGE_FLAGS_NO_REPLY_EXPECTED);
+  g_dbus_message_set_reply_serial (message, (guint32) msg->cookie_reply);
+
+  g_dbus_message_set_sender (message, "org.freedesktop.DBus");
+  g_dbus_message_set_destination (message, worker->unique_name);
+
+  g_dbus_message_set_error_name (message, "org.freedesktop.DBus.Error.NoReply");
+
+  if (item->type == KDBUS_ITEM_REPLY_TIMEOUT)
+    g_dbus_message_set_body (message, g_variant_new ("(s)", "Method call timed out"));
+  else
+    g_dbus_message_set_body (message, g_variant_new ("(s)", "Method call peer died"));
+
+  (* worker->message_received_callback) (message, worker->user_data);
+
+  g_object_unref (message);
 }
 
 
@@ -2118,7 +2139,7 @@ g_kdbus_decode_kernel_msg (GKDBusWorker           *worker,
 
           case KDBUS_ITEM_REPLY_TIMEOUT:
           case KDBUS_ITEM_REPLY_DEAD:
-            g_kdbus_translate_kernel_reply (worker, item);
+            g_kdbus_translate_kernel_reply (worker, msg, item);
             break;
 
           case KDBUS_ITEM_TIMESTAMP:
