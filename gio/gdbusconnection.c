@@ -1124,6 +1124,15 @@ g_dbus_connection_init (GDBusConnection *connection)
   connection->filters = g_ptr_array_new ();
 }
 
+gboolean
+_g_dbus_connection_is_kdbus (GDBusConnection *connection)
+{
+  if (connection->kdbus_worker)
+    return TRUE;
+  else
+    return FALSE;
+}
+
 /**
  * g_dbus_connection_get_stream:
  * @connection: a #GDBusConnection

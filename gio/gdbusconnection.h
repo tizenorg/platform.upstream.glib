@@ -89,6 +89,8 @@ GDBusConnection *g_dbus_connection_new_for_address_sync       (const gchar      
                                                                GCancellable           *cancellable,
                                                                GError                **error);
 
+gboolean        _g_dbus_connection_is_kdbus                   (GDBusConnection        *connection);
+
 /* ---------------------------------------------------------------------------------------------------- */
 
 GLIB_AVAILABLE_IN_2_40

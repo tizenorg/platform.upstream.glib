@@ -322,6 +322,22 @@ on_name_owner_changed (GDBusConnection *connection,
 /* ---------------------------------------------------------------------------------------------------- */
 
 static void
+process_get_name_owner (Client      *client,
+                        const char  *name_owner)
+{
+  if (name_owner != NULL)
+    {
+      g_warn_if_fail (client->name_owner == NULL);
+      client->name_owner = g_strdup (name_owner);
+      call_appeared_handler (client);
+    }
+  else
+    call_vanished_handler (client, FALSE);
+
+  client->initialized = TRUE;
+}
+
+static void
 get_name_owner_cb (GObject      *source_object,
                    GAsyncResult *res,
                    gpointer      user_data)
@@ -341,18 +357,7 @@ get_name_owner_cb (GObject      *source_object,
       g_variant_get (result, "(&s)", &name_owner);
     }
 
-  if (name_owner != NULL)
-    {
-      g_warn_if_fail (client->name_owner == NULL);
-      client->name_owner = g_strdup (name_owner);
-      call_appeared_handler (client);
-    }
-  else
-    {
-      call_vanished_handler (client, FALSE);
-    }
-
-  client->initialized = TRUE;
+  process_get_name_owner (client, name_owner);
 
   if (result != NULL)
     g_variant_unref (result);
@@ -364,18 +369,31 @@ get_name_owner_cb (GObject      *source_object,
 static void
 invoke_get_name_owner (Client *client)
 {
-  g_dbus_connection_call (client->connection,
-                          "org.freedesktop.DBus",  /* bus name */
-                          "/org/freedesktop/DBus", /* object path */
-                          "org.freedesktop.DBus",  /* interface name */
-                          "GetNameOwner",          /* method name */
-                          g_variant_new ("(s)", client->name),
-                          G_VARIANT_TYPE ("(s)"),
-                          G_DBUS_CALL_FLAGS_NONE,
-                          -1,
-                          NULL,
-                          (GAsyncReadyCallback) get_name_owner_cb,
-                          client_ref (client));
+  if (_g_dbus_connection_is_kdbus (client->connection))
+    {
+      char *name_owner;
+
+      name_owner = g_dbus_get_name_owner (client->connection,
+                                          client->name,
+                                          NULL);
+      process_get_name_owner (client, name_owner);
+      g_free (name_owner);
+    }
+  else
+    {
+      g_dbus_connection_call (client->connection,
+                              "org.freedesktop.DBus",  /* bus name */
+                              "/org/freedesktop/DBus", /* object path */
+                              "org.freedesktop.DBus",  /* interface name */
+                              "GetNameOwner",          /* method name */
+                              g_variant_new ("(s)", client->name),
+                              G_VARIANT_TYPE ("(s)"),
+                              G_DBUS_CALL_FLAGS_NONE,
+                              -1,
+                              NULL,
+                              (GAsyncReadyCallback) get_name_owner_cb,
+                              client_ref (client));
+    }
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
