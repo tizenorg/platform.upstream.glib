@@ -346,7 +346,6 @@ g_application_impl_attempt_primary (GApplicationImpl  *impl,
     NULL /* set_property */
   };
   GApplicationClass *app_class = G_APPLICATION_GET_CLASS (impl->app);
-  GVariant *reply;
   guint32 rval;
 
   if (org_gtk_Application == NULL)
@@ -425,16 +424,10 @@ g_application_impl_attempt_primary (GApplicationImpl  *impl,
    * in the case that we can't do that.
    */
   /* DBUS_NAME_FLAG_DO_NOT_QUEUE: 0x4 */
-  reply = g_dbus_connection_call_sync (impl->session_bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
-                                       "org.freedesktop.DBus", "RequestName",
-                                       g_variant_new ("(su)", impl->bus_name, 0x4), G_VARIANT_TYPE ("(u)"),
-                                       0, -1, cancellable, error);
+  rval = g_dbus_request_name (impl->session_bus, impl->bus_name, G_BUS_NAME_OWNER_FLAGS_DO_NOT_QUEUE, error);
 
-  if (reply == NULL)
+  if (rval == G_BUS_REQUEST_NAME_FLAGS_ERROR)
     return FALSE;
-
-  g_variant_get (reply, "(u)", &rval);
-  g_variant_unref (reply);
 
   /* DBUS_REQUEST_NAME_REPLY_EXISTS: 3 */
   impl->primary = (rval != 3);
@@ -479,10 +472,7 @@ g_application_impl_stop_primary (GApplicationImpl *impl)
 
   if (impl->primary && impl->bus_name)
     {
-      g_dbus_connection_call (impl->session_bus, "org.freedesktop.DBus",
-                              "/org/freedesktop/DBus", "org.freedesktop.DBus",
-                              "ReleaseName", g_variant_new ("(s)", impl->bus_name),
-                              NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
+      g_dbus_release_name (impl->session_bus, impl->bus_name, NULL);
       impl->primary = FALSE;
     }
 }

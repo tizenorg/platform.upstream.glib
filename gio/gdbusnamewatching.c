@@ -475,18 +475,21 @@ has_connection (Client *client)
 
   if (client->flags & G_BUS_NAME_WATCHER_FLAGS_AUTO_START)
     {
-      g_dbus_connection_call (client->connection,
-                              "org.freedesktop.DBus",  /* bus name */
-                              "/org/freedesktop/DBus", /* object path */
-                              "org.freedesktop.DBus",  /* interface name */
-                              "StartServiceByName",    /* method name */
-                              g_variant_new ("(su)", client->name, 0),
-                              G_VARIANT_TYPE ("(u)"),
-                              G_DBUS_CALL_FLAGS_NONE,
-                              -1,
-                              NULL,
-                              (GAsyncReadyCallback) start_service_by_name_cb,
-                              client_ref (client));
+      if (_g_dbus_connection_is_kdbus (client->connection))
+        g_error ("TODO: Implement StartServiceByName\n");
+      else
+        g_dbus_connection_call (client->connection,
+                                "org.freedesktop.DBus",  /* bus name */
+                                "/org/freedesktop/DBus", /* object path */
+                                "org.freedesktop.DBus",  /* interface name */
+                                "StartServiceByName",    /* method name */
+                                g_variant_new ("(su)", client->name, 0),
+                                G_VARIANT_TYPE ("(u)"),
+                                G_DBUS_CALL_FLAGS_NONE,
+                                -1,
+                                NULL,
+                                (GAsyncReadyCallback) start_service_by_name_cb,
+                                client_ref (client));
     }
   else
     {

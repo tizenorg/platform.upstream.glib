@@ -265,10 +265,9 @@ static void
 print_names (GDBusConnection *c,
              gboolean         include_unique_names)
 {
-  GVariant *result;
+  gchar **list_names;
   GError *error;
-  GVariantIter *iter;
-  gchar *str;
+  guint cnt;
   GHashTable *name_set;
   GList *keys;
   GList *l;
@@ -276,52 +275,32 @@ print_names (GDBusConnection *c,
   name_set = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
 
   error = NULL;
-  result = g_dbus_connection_call_sync (c,
-                                        "org.freedesktop.DBus",
-                                        "/org/freedesktop/DBus",
-                                        "org.freedesktop.DBus",
-                                        "ListNames",
-                                        NULL,
-                                        G_VARIANT_TYPE ("(as)"),
-                                        G_DBUS_CALL_FLAGS_NONE,
-                                        3000, /* 3 secs */
-                                        NULL,
-                                        &error);
-  if (result == NULL)
+  cnt = 0;
+  list_names = g_dbus_get_list_names (c, &error);
+  if (list_names == NULL)
     {
       g_printerr (_("Error: %s\n"), error->message);
       g_error_free (error);
       goto out;
     }
-  g_variant_get (result, "(as)", &iter);
-  while (g_variant_iter_loop (iter, "s", &str))
-    g_hash_table_insert (name_set, g_strdup (str), NULL);
-  g_variant_iter_free (iter);
-  g_variant_unref (result);
+
+  while (list_names[cnt])
+    g_hash_table_insert (name_set, g_strdup (list_names[cnt++]), NULL);
+  g_strfreev(list_names);
 
   error = NULL;
-  result = g_dbus_connection_call_sync (c,
-                                        "org.freedesktop.DBus",
-                                        "/org/freedesktop/DBus",
-                                        "org.freedesktop.DBus",
-                                        "ListActivatableNames",
-                                        NULL,
-                                        G_VARIANT_TYPE ("(as)"),
-                                        G_DBUS_CALL_FLAGS_NONE,
-                                        3000, /* 3 secs */
-                                        NULL,
-                                        &error);
-  if (result == NULL)
+  cnt = 0;
+  list_names = g_dbus_get_list_activatable_names (c, &error);
+  if (list_names == NULL)
     {
       g_printerr (_("Error: %s\n"), error->message);
       g_error_free (error);
       goto out;
     }
-  g_variant_get (result, "(as)", &iter);
-  while (g_variant_iter_loop (iter, "s", &str))
-    g_hash_table_insert (name_set, g_strdup (str), NULL);
-  g_variant_iter_free (iter);
-  g_variant_unref (result);
+
+  while (list_names[cnt])
+    g_hash_table_insert (name_set, g_strdup (list_names[cnt++]), NULL);
+  g_strfreev(list_names);
 
   keys = g_hash_table_get_keys (name_set);
   keys = g_list_sort (keys, (GCompareFunc) g_strcmp0);
