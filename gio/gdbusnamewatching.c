@@ -399,6 +399,24 @@ invoke_get_name_owner (Client *client)
 /* ---------------------------------------------------------------------------------------------------- */
 
 static void
+process_start_service_by_name (Client   *client,
+                               guint32   result)
+{
+  if (result == G_BUS_START_SERVICE_REPLY_SUCCESS)
+    invoke_get_name_owner (client);
+  else if (result == G_BUS_START_SERVICE_REPLY_ALREADY_RUNNING)
+    invoke_get_name_owner (client);
+  else if (result == G_BUS_START_SERVICE_REPLY_ERROR)
+    invoke_get_name_owner (client);
+  else
+    {
+      g_warning ("Unexpected reply %d from StartServiceByName() method", result);
+      call_vanished_handler (client, FALSE);
+      client->initialized = TRUE;
+    }
+}
+
+static void
 start_service_by_name_cb (GObject      *source_object,
                           GAsyncResult *res,
                           gpointer      user_data)
@@ -416,20 +434,7 @@ start_service_by_name_cb (GObject      *source_object,
       guint32 start_service_result;
       g_variant_get (result, "(u)", &start_service_result);
 
-      if (start_service_result == 1) /* DBUS_START_REPLY_SUCCESS */
-        {
-          invoke_get_name_owner (client);
-        }
-      else if (start_service_result == 2) /* DBUS_START_REPLY_ALREADY_RUNNING */
-        {
-          invoke_get_name_owner (client);
-        }
-      else
-        {
-          g_warning ("Unexpected reply %d from StartServiceByName() method", start_service_result);
-          call_vanished_handler (client, FALSE);
-          client->initialized = TRUE;
-        }
+      process_start_service_by_name (client, start_service_result);
     }
   else
     {
@@ -476,7 +481,12 @@ has_connection (Client *client)
   if (client->flags & G_BUS_NAME_WATCHER_FLAGS_AUTO_START)
     {
       if (_g_dbus_connection_is_kdbus (client->connection))
-        g_error ("TODO: Implement StartServiceByName\n");
+        {
+          guint32 result;
+
+          result = g_dbus_start_service_by_name (client->connection, client->name, 0, NULL);
+          process_start_service_by_name (client, result);
+        }
       else
         g_dbus_connection_call (client->connection,
                                 "org.freedesktop.DBus",  /* bus name */
