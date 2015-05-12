@@ -127,6 +127,11 @@ GLIB_AVAILABLE_IN_2_40
 guint32    g_dbus_get_connection_uid                          (GDBusConnection    *connection,
                                                                const gchar        *name,
                                                                GError            **error);
+GLIB_AVAILABLE_IN_2_40
+GBusStartServiceReplyFlags    g_dbus_start_service_by_name    (GDBusConnection    *connection,
+                                                               const gchar        *name,
+                                                               guint32             flags,
+                                                               GError            **error);
 
 /* ---------------------------------------------------------------------------------------------------- */
 

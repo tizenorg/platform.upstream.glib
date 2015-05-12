@@ -2083,6 +2083,43 @@ g_dbus_get_connection_uid (GDBusConnection  *connection,
   return uid;
 }
 
+/**
+ * g_dbus_start_service_by_name:
+ *
+ * Since: 2.4x
+ */
+GBusStartServiceReplyFlags
+g_dbus_start_service_by_name (GDBusConnection  *connection,
+                              const gchar      *name,
+                              guint32           flags,
+                              GError          **error)
+{
+  GVariant *result;
+  guint32 ret;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), -1);
+  g_return_val_if_fail (name == NULL || g_dbus_is_name (name), -1);
+  g_return_val_if_fail (error == NULL || *error == NULL, -1);
+
+  result = NULL;
+  ret = G_BUS_START_SERVICE_REPLY_ERROR;
+
+  if (connection->kdbus_worker)
+    result = _g_kdbus_StartServiceByName (connection->kdbus_worker, connection, name, flags, error);
+  else
+    result = g_dbus_connection_call_sync (connection, "org.freedesktop.DBus", "/",
+                                          "org.freedesktop.DBus", "StartServiceByName",
+                                          g_variant_new ("(su)", name, flags), G_VARIANT_TYPE ("(u)"),
+                                          G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+  if (result != NULL)
+    {
+      g_variant_get (result, "(u)", &ret);
+      g_variant_unref (result);
+    }
+
+  return (GBusStartServiceReplyFlags) ret;
+}
+
 /* ---------------------------------------------------------------------------------------------------- */
 
 /**

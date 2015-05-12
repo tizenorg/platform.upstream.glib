@@ -1304,6 +1304,54 @@ _g_kdbus_GetConnectionUnixUser (GKDBusWorker  *worker,
 
 
 /**
+ * _g_kdbus_StartServiceByName:
+ *
+ */
+GVariant *
+_g_kdbus_StartServiceByName (GKDBusWorker     *worker,
+                             GDBusConnection  *connection,
+                             const gchar      *name,
+                             guint32           flags,
+                             GError          **error)
+{
+  GVariant *result;
+  guint32 status;
+
+  if (!g_dbus_is_name (name))
+    {
+      g_set_error (error,
+                   G_DBUS_ERROR,
+                   G_DBUS_ERROR_INVALID_ARGS,
+                   "Given bus name \"%s\" is not valid", name);
+      return NULL;
+    }
+
+  if (!g_kdbus_NameHasOwner_internal (worker, name, error))
+    {
+      GVariant *ret;
+
+      ret = g_dbus_connection_call_sync (connection, name, "/",
+                                         "org.freedesktop.DBus.Peer", "Ping",
+                                         NULL, G_VARIANT_TYPE ("(u)"),
+                                         G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+      if (ret != NULL)
+        {
+          status = G_BUS_START_SERVICE_REPLY_SUCCESS;
+          g_variant_unref (ret);
+        }
+      else
+        return NULL;
+    }
+  else
+    status = G_BUS_START_SERVICE_REPLY_ALREADY_RUNNING;
+
+  result = g_variant_new ("(u)", status);
+
+  return result;
+}
+
+
+/**
  * g_kdbus_bloom_add_data:
  * Based on bus-bloom.c from systemd
  * http://cgit.freedesktop.org/systemd/systemd/tree/src/libsystemd/sd-bus/bus-bloom.c

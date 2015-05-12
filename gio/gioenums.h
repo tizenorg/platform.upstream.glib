@@ -974,8 +974,8 @@ typedef enum
  * GBusReleaseNameReplyFlags:
  * @G_BUS_RELEASE_NAME_FLAGS_ERROR: Error flag.
  * @G_BUS_RELEASE_NAME_FLAGS_RELEASED: The caller has released his claim on the given name.
- * @G_BUS_RELEASE_NAME_FLAGS_NON_EXISTENT: The given name does not exist on this bus
- * @G_BUS_RELEASE_NAME_FLAGS_NOT_OWNER: The caller not waiting in the queue to own this name
+ * @G_BUS_RELEASE_NAME_FLAGS_NON_EXISTENT: The given name does not exist on this bus.
+ * @G_BUS_RELEASE_NAME_FLAGS_NOT_OWNER: The caller not waiting in the queue to own this name.
  *
  * Flags used in g_dbus_release_name().
  *
@@ -988,6 +988,23 @@ typedef enum
   G_BUS_RELEASE_NAME_FLAGS_NON_EXISTENT = 2,
   G_BUS_RELEASE_NAME_FLAGS_NOT_OWNER = 3
 } GBusReleaseNameReplyFlags;
+
+/**
+ * GBusStartServiceReplyFlags:
+ * @G_BUS_START_SERVICE_REPLY_ERROR: Error flag.
+ * @G_BUS_START_SERVICE_REPLY_SUCCESS: The service was successfully started.
+ * @G_BUS_START_SERVICE_REPLY_ALREADY_RUNNING: A connection already owns the given name.
+ *
+ * Flags used in g_dbus_start_service_by_name().
+ *
+ * Since: 2.4x
+ */
+typedef enum
+{
+  G_BUS_START_SERVICE_REPLY_ERROR = 0,
+  G_BUS_START_SERVICE_REPLY_SUCCESS = 1,
+  G_BUS_START_SERVICE_REPLY_ALREADY_RUNNING = 2
+} GBusStartServiceReplyFlags;
 
 /**
  * GBusNameWatcherFlags:
