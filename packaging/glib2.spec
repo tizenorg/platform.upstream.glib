@@ -1,10 +1,12 @@
-%define baseline 2.40
+%bcond_with kdbus
+%define baseline 2.43
 %define with_systemtap 0
 %define keepstatic 1
+%define release_flags %{?with_kdbus:+kdbus}
 
 Name:           glib2
 Version:        2.43.1
-Release:        0
+Release:        0%{?release_flags}
 # FIXME: find out if tapsets should really be in devel package or in main package
 Summary:        General-Purpose Utility Library
 License:        LGPL-2.1+
@@ -185,6 +187,9 @@ NOCONFIGURE=1 ./autogen.sh
     --enable-static \
 %if 0%{?with_systemtap}
     --enable-systemtap \
+%endif
+%if %{with kdbus}
+    --enable-kdbus \
 %endif
     --with-pcre=system
 
