@@ -19,6 +19,7 @@
 #include "config.h"
 
 #include <glib/gvariant-core.h>
+#include "glib-private.h"
 
 #include <glib/gvariant-serialiser.h>
 #include <glib/gtestutils.h>
@@ -106,21 +107,11 @@ struct _GVariant
  *            The type_info field never changes during the life of the
  *            instance, so it can be accessed without a lock.
  *
- * size: this is the size of the serialised form for the instance, if it
- *       is known.  If the instance is in serialised form then it is, by
- *       definition, known.  If the instance is in tree form then it may
- *       be unknown (in which case it is -1).  It is possible for the
- *       size to be known when in tree form if, for example, the user
- *       has called g_variant_get_size() without calling
- *       g_variant_get_data().  Additionally, even when the user calls
- *       g_variant_get_data() the size of the data must first be
- *       determined so that a large enough buffer can be allocated for
- *       the data.
- *
- *       Once the size is known, it can never become unknown again.
- *       g_variant_ensure_size() is used to ensure that the size is in
- *       the known state -- it calculates the size if needed.  After
- *       that, the size field can be accessed without a lock.
+ * size: this is the size of the serialised form for the instance.  It
+ *       is known for serialised instances and also tree-form instances
+ *       (for which it is calculated at construction time, from the
+ *       known sizes of the children used).  After construction, it
+ *       never changes and therefore can be accessed without a lock.
  *
  * contents: a union containing either the information associated with
  *           holding a value in serialised form or holding a value in
@@ -259,6 +250,31 @@ g_variant_release_children (GVariant *value)
   g_free (value->contents.tree.children);
 }
 
+/* < private >
+ * g_variant_lock_in_tree_form:
+ * @value: a #GVariant
+ *
+ * Locks @value if it is in tree form.
+ *
+ * Returns: %TRUE if @value is now in tree form with the lock acquired
+ */
+static gboolean
+g_variant_lock_in_tree_form (GVariant *value)
+{
+  if (g_atomic_int_get (&value->state) & STATE_SERIALISED)
+    return FALSE;
+
+  g_variant_lock (value);
+
+  if (value->state & STATE_SERIALISED)
+    {
+      g_variant_unlock (value);
+      return FALSE;
+    }
+
+  return TRUE;
+}
+
 /* This begins the main body of the recursive serialiser.
  *
  * There are 3 functions here that work as a team with the serialiser to
@@ -276,31 +292,19 @@ g_variant_release_children (GVariant *value)
  * instances are always in serialised form.  For these instances,
  * storing their serialised form merely involves a memcpy().
  *
- * Serialisation is a two-step process.  First, the size of the
- * serialised data must be calculated so that an appropriately-sized
- * buffer can be allocated.  Second, the data is written into the
- * buffer.
+ * Converting to serialised form:
  *
- * Determining the size:
- *   The process of determining the size is triggered by a call to
- *   g_variant_ensure_size() on a container.  This invokes the
- *   serialiser code to determine the size.  The serialiser is passed
- *   g_variant_fill_gvs() as a callback.
+ *   The first step in the process of converting a GVariant to
+ *   serialised form is to allocate a buffer.  The size of the buffer is
+ *   always known because we computed at construction time of the
+ *   GVariant.
  *
- *   g_variant_fill_gvs() is called by the serialiser on each child of
- *   the container which, in turn, calls g_variant_ensure_size() on
- *   itself and fills in the result of its own size calculation.
- *
- *   The serialiser uses the size information from the children to
- *   calculate the size needed for the entire container.
- *
- * Writing the data:
  *   After the buffer has been allocated, g_variant_serialise() is
  *   called on the container.  This invokes the serialiser code to write
- *   the bytes to the container.  The serialiser is, again, passed
+ *   the bytes to the container.  The serialiser is passed
  *   g_variant_fill_gvs() as a callback.
  *
- *   This time, when g_variant_fill_gvs() is called for each child, the
+ *   At the time that g_variant_fill_gvs() is called for each child, the
  *   child is given a pointer to a sub-region of the allocated buffer
  *   where it should write its data.  This is done by calling
  *   g_variant_store().  In the event that the instance is in serialised
@@ -312,34 +316,6 @@ g_variant_release_children (GVariant *value)
  * The forward declaration here allows corecursion via callback:
  */
 static void g_variant_fill_gvs (GVariantSerialised *, gpointer);
-
-/* < private >
- * g_variant_ensure_size:
- * @value: a #GVariant
- *
- * Ensures that the ->size field of @value is filled in properly.  This
- * must be done as a precursor to any serialisation of the value in
- * order to know how large of a buffer is needed to store the data.
- *
- * The current thread must hold the lock on @value.
- */
-static void
-g_variant_ensure_size (GVariant *value)
-{
-  g_assert (value->state & STATE_LOCKED);
-
-  if (value->size == (gssize) -1)
-    {
-      gpointer *children;
-      gsize n_children;
-
-      children = (gpointer *) value->contents.tree.children;
-      n_children = value->contents.tree.n_children;
-      value->size = g_variant_serialiser_needed_size (value->type_info,
-                                                      g_variant_fill_gvs,
-                                                      children, n_children);
-    }
-}
 
 /* < private >
  * g_variant_serialise:
@@ -386,19 +362,18 @@ g_variant_serialise (GVariant *value,
  *
  *  - reporting its type
  *
- *  - reporting its serialised size (requires knowing the size first)
+ *  - reporting its serialised size
  *
  *  - possibly storing its serialised form into the provided buffer
+ *
+ * This callback is also used during g_variant_new_from_children() in
+ * order to discover the size and type of each child.
  */
 static void
 g_variant_fill_gvs (GVariantSerialised *serialised,
                     gpointer            data)
 {
   GVariant *value = data;
-
-  g_variant_lock (value);
-  g_variant_ensure_size (value);
-  g_variant_unlock (value);
 
   if (serialised->type_info == NULL)
     serialised->type_info = value->type_info;
@@ -423,25 +398,19 @@ g_variant_fill_gvs (GVariantSerialised *serialised,
  *
  * Ensures that @value is in serialised form.
  *
- * If @value is in tree form then this function ensures that the
- * serialised size is known and then allocates a buffer of that size and
- * serialises the instance into the buffer.  The 'children' array is
- * then released and the instance is set to serialised form based on the
- * contents of the buffer.
- *
- * The current thread must hold the lock on @value.
+ * If @value is in tree form then this function allocates a buffer of
+ * that size and serialises the instance into the buffer.  The
+ * 'children' array is then released and the instance is set to
+ * serialised form based on the contents of the buffer.
  */
 static void
 g_variant_ensure_serialised (GVariant *value)
 {
-  g_assert (value->state & STATE_LOCKED);
-
-  if (~value->state & STATE_SERIALISED)
+  if (g_variant_lock_in_tree_form (value))
     {
       GBytes *bytes;
       gpointer data;
 
-      g_variant_ensure_size (value);
       data = g_malloc (value->size);
       g_variant_serialise (value, data);
 
@@ -451,12 +420,69 @@ g_variant_ensure_serialised (GVariant *value)
       value->contents.serialised.data = g_bytes_get_data (bytes, NULL);
       value->contents.serialised.bytes = bytes;
       value->state |= STATE_SERIALISED;
+
+      g_variant_unlock (value);
     }
+}
+
+/* Now we have the code to recursively serialise a GVariant into a
+ * GVariantVectors structure.
+ *
+ * We want to do this in cases where the GVariant contains large chunks
+ * of serialised data in order to avoid having to copy this data.
+ *
+ * This generally works the same as normal serialising (co-recursion
+ * with the serialiser) but instead of using a callback we just hard-code
+ * the callback with the name g_variant_callback_write_to_vectors().
+ *
+ * This is a private API that will be used by GDBus.
+ */
+gsize
+g_variant_callback_write_to_vectors (GVariantVectors   *vectors,
+                                     gpointer           data,
+                                     GVariantTypeInfo **type_info)
+{
+  GVariant *value = data;
+
+  if (g_variant_lock_in_tree_form (value))
+    {
+      g_variant_serialiser_write_to_vectors (vectors, value->type_info, value->size,
+                                             (gpointer *) value->contents.tree.children,
+                                             value->contents.tree.n_children);
+
+      g_variant_unlock (value);
+    }
+  else
+    g_variant_vectors_append_gbytes (vectors, value->contents.serialised.bytes,
+                                     value->contents.serialised.data, value->size);
+
+  if (type_info)
+    *type_info = value->type_info;
+
+  return value->size;
+}
+
+/* < private >
+ * g_variant_serialise_to_vectors:
+ * @value: a #GVariant
+ * @vectors: (out): the result
+ *
+ * Serialises @value into @vectors.
+ *
+ * The caller must free @vectors.
+ */
+void
+g_variant_to_vectors (GVariant        *value,
+                      GVariantVectors *vectors)
+{
+  g_variant_vectors_init (vectors);
+
+  g_variant_callback_write_to_vectors (vectors, value, NULL);
 }
 
 /* < private >
  * g_variant_alloc:
- * @type: the type of the new instance
+ * @type_info: (transfer full) the type info of the new instance
  * @serialised: if the instance will be in serialised form
  * @trusted: if the instance will be trusted
  *
@@ -467,71 +493,18 @@ g_variant_ensure_serialised (GVariant *value)
  * Returns: a new #GVariant with a floating reference
  */
 static GVariant *
-g_variant_alloc (const GVariantType *type,
-                 gboolean            serialised,
-                 gboolean            trusted)
+g_variant_alloc (GVariantTypeInfo *type_info,
+                 gboolean          serialised,
+                 gboolean          trusted)
 {
   GVariant *value;
 
   value = g_slice_new (GVariant);
-  value->type_info = g_variant_type_info_get (type);
+  value->type_info = type_info;
   value->state = (serialised ? STATE_SERIALISED : 0) |
                  (trusted ? STATE_TRUSTED : 0) |
                  STATE_FLOATING;
-  value->size = (gssize) -1;
   value->ref_count = 1;
-
-  return value;
-}
-
-/**
- * g_variant_new_from_bytes:
- * @type: a #GVariantType
- * @bytes: a #GBytes
- * @trusted: if the contents of @bytes are trusted
- *
- * Constructs a new serialised-mode #GVariant instance.  This is the
- * inner interface for creation of new serialised values that gets
- * called from various functions in gvariant.c.
- *
- * A reference is taken on @bytes.
- *
- * Returns: (transfer none): a new #GVariant with a floating reference
- *
- * Since: 2.36
- */
-GVariant *
-g_variant_new_from_bytes (const GVariantType *type,
-                          GBytes             *bytes,
-                          gboolean            trusted)
-{
-  GVariant *value;
-  guint alignment;
-  gsize size;
-
-  value = g_variant_alloc (type, TRUE, trusted);
-
-  value->contents.serialised.bytes = g_bytes_ref (bytes);
-
-  g_variant_type_info_query (value->type_info,
-                             &alignment, &size);
-
-  if (size && g_bytes_get_size (bytes) != size)
-    {
-      /* Creating a fixed-sized GVariant with a bytes of the wrong
-       * size.
-       *
-       * We should do the equivalent of pulling a fixed-sized child out
-       * of a brozen container (ie: data is NULL size is equal to the correct
-       * fixed size).
-       */
-      value->contents.serialised.data = NULL;
-      value->size = size;
-    }
-  else
-    {
-      value->contents.serialised.data = g_bytes_get_data (bytes, &value->size);
-    }
 
   return value;
 }
@@ -540,13 +513,13 @@ g_variant_new_from_bytes (const GVariantType *type,
 
 /* < internal >
  * g_variant_new_from_children:
- * @type: a #GVariantType
+ * @type_info: (transfer full) a #GVariantTypeInfo
  * @children: an array of #GVariant pointers.  Consumed.
  * @n_children: the length of @children
  * @trusted: %TRUE if every child in @children in trusted
  *
  * Constructs a new tree-mode #GVariant instance.  This is the inner
- * interface for creation of new serialised values that gets called from
+ * interface for creation of new tree-mode values that gets called from
  * various functions in gvariant.c.
  *
  * @children is consumed by this function.  g_free() will be called on
@@ -555,16 +528,75 @@ g_variant_new_from_bytes (const GVariantType *type,
  * Returns: a new #GVariant with a floating reference
  */
 GVariant *
-g_variant_new_from_children (const GVariantType  *type,
-                             GVariant           **children,
-                             gsize                n_children,
-                             gboolean             trusted)
+g_variant_new_from_children (GVariantTypeInfo  *type_info,
+                             GVariant         **children,
+                             gsize              n_children,
+                             gboolean           trusted)
 {
   GVariant *value;
 
-  value = g_variant_alloc (type, FALSE, trusted);
+  value = g_variant_alloc (type_info, FALSE, trusted);
   value->contents.tree.children = children;
   value->contents.tree.n_children = n_children;
+  value->size = g_variant_serialiser_needed_size (value->type_info, g_variant_fill_gvs,
+                                                  (gpointer *) children, n_children);
+
+  return value;
+}
+
+/* < internal >
+ * g_variant_new_serialised:
+ * @type_info: (transfer full): a #GVariantTypeInfo
+ * @bytes: (transfer full): the #GBytes holding @data
+ * @data: a pointer to the serialised data
+ * @size: the size of @data, in bytes
+ * @trusted: %TRUE if @data is trusted
+ *
+ * Constructs a new serialised #GVariant instance.  This is the inner
+ * interface for creation of new serialised values that gets called from
+ * various functions in gvariant.c.
+ *
+ * @bytes is consumed by this function.  g_bytes_unref() will be called
+ * on it some time later.
+ *
+ * Returns: a new #GVariant with a floating reference
+ */
+GVariant *
+g_variant_new_serialised (GVariantTypeInfo *type_info,
+                          GBytes           *bytes,
+                          gconstpointer     data,
+                          gsize             size,
+                          gboolean          trusted)
+{
+  GVariant *value;
+  gsize fixed_size;
+
+  value = g_variant_alloc (type_info, TRUE, trusted);
+  value->contents.serialised.bytes = bytes;
+  value->contents.serialised.data = data;
+  value->size = size;
+
+  g_variant_type_info_query (value->type_info, NULL, &fixed_size);
+  if G_UNLIKELY (fixed_size && size != fixed_size)
+    {
+      /* Creating a fixed-sized GVariant with a bytes of the wrong
+       * size.
+       *
+       * We should do the equivalent of pulling a fixed-sized child out
+       * of a broken container (ie: data is NULL size is equal to the correct
+       * fixed size).
+       *
+       * This really ought not to happen if the data is trusted...
+       */
+      if (trusted)
+        g_error ("Attempting to create a trusted GVariant instance out of invalid data");
+
+      /* We hang on to the GBytes (even though we don't use it anymore)
+       * because every GVariant must have a GBytes.
+       */
+      value->contents.serialised.data = NULL;
+      value->size = fixed_size;
+    }
 
   return value;
 }
@@ -605,6 +637,191 @@ gboolean
 g_variant_is_trusted (GVariant *value)
 {
   return (value->state & STATE_TRUSTED) != 0;
+}
+
+/* < internal >
+ * g_variant_get_serialised:
+ * @value: a #GVariant
+ * @bytes: (out) (transfer none): a location to store the #GBytes
+ * @size: (out): a location to store the size of the returned data
+ *
+ * Ensures that @value is in serialised form and returns information
+ * about it.  This is called from various APIs in gvariant.c
+ *
+ * Returns: data, of length @size
+ */
+gconstpointer
+g_variant_get_serialised (GVariant  *value,
+                          GBytes   **bytes,
+                          gsize     *size)
+{
+  g_variant_ensure_serialised (value);
+
+  if (bytes)
+    *bytes = value->contents.serialised.bytes;
+
+  *size = value->size;
+
+  return value->contents.serialised.data;
+}
+
+static GVariant *
+g_variant_vector_deserialise (GVariantTypeInfo *type_info,
+                              GVariantVector   *first_vector,
+                              GVariantVector   *last_vector,
+                              gsize             size,
+                              gboolean          trusted,
+                              GArray           *unpacked_children)
+{
+  g_assert (size > 0);
+
+  if (first_vector < last_vector)
+    {
+      GVariantVector *vector = first_vector;
+      const guchar *end_pointer;
+      GVariant **children;
+      guint save_point;
+      guint n_children;
+      gboolean failed;
+      guint i;
+
+      end_pointer = last_vector->data.pointer + last_vector->size;
+      save_point = unpacked_children->len;
+
+      if (!g_variant_serialiser_unpack_all (type_info, end_pointer, last_vector->size, size, unpacked_children))
+        {
+          for (i = save_point; i < unpacked_children->len; i++)
+            g_variant_type_info_unref (g_array_index (unpacked_children, GVariantUnpacked, i).type_info);
+          g_array_set_size (unpacked_children, save_point);
+
+          g_variant_type_info_unref (type_info);
+
+          return NULL;
+        }
+
+      n_children = unpacked_children->len - save_point;
+      children = g_new (GVariant *, n_children);
+      failed = FALSE;
+
+      for (i = 0; i < n_children; i++)
+        {
+          GVariantUnpacked *unpacked = &g_array_index (unpacked_children, GVariantUnpacked, save_point + i);
+          const guchar *resume_at_data;
+          gsize resume_at_size;
+          GVariantVector *fv;
+
+          /* Skip the alignment.
+           *
+           * We can destroy vectors because we won't be going back.
+           *
+           * We do a >= compare because we want to go to the next vector
+           * if it is the start of our child.
+           */
+          while (unpacked->skip >= vector->size)
+            {
+              unpacked->skip -= vector->size;
+              vector++;
+            }
+          g_assert (vector <= last_vector);
+
+          fv = vector;
+          fv->data.pointer += unpacked->skip;
+          fv->size -= unpacked->skip;
+
+          if (unpacked->size == 0)
+            {
+              children[i] = g_variant_new_serialised (unpacked->type_info, g_bytes_new (NULL, 0), NULL, 0, trusted);
+              g_variant_ref_sink (children[i]);
+              continue;
+            }
+
+          /* Now skip to the end, according to 'size'.
+           *
+           * We cannot destroy everything here because we will probably
+           * end up reusing the last one.
+           *
+           * We do a > compare because we want to stay on this vector if
+           * it is the end of our child.
+           */
+          size = unpacked->size;
+          while (unpacked->size > vector->size)
+            {
+              unpacked->size -= vector->size;
+              vector++;
+            }
+          g_assert (vector <= last_vector);
+
+          /* We have to modify the vectors for the benefit of the
+           * recursive step.  We also have to remember where we left
+           * off, keeping in mind that the recursive step may itself
+           * modify the vectors.
+           */
+          resume_at_data = vector->data.pointer + unpacked->size;
+          resume_at_size = vector->size - unpacked->size;
+          vector->size = unpacked->size;
+
+          children[i] = g_variant_vector_deserialise (unpacked->type_info, fv, vector,
+                                                      size, trusted, unpacked_children);
+
+          vector->data.pointer = resume_at_data;
+          vector->size = resume_at_size;
+
+          if (children[i])
+            g_variant_ref_sink (children[i]);
+          else
+            failed = TRUE;
+        }
+
+      /* We consumed all the type infos */
+      g_array_set_size (unpacked_children, save_point);
+
+      if G_UNLIKELY (failed)
+        {
+          for (i = 0; i < n_children; i++)
+            if (children[i])
+              g_variant_unref (children[i]);
+
+          g_variant_type_info_unref (type_info);
+          g_free (children);
+
+          return NULL;
+        }
+
+      return g_variant_new_from_children (type_info, children, n_children, trusted);
+    }
+  else
+    {
+      g_assert (first_vector == last_vector);
+      g_assert (size == first_vector->size);
+
+      return g_variant_new_serialised (type_info, g_bytes_ref (first_vector->gbytes),
+                                       first_vector->data.pointer, size, trusted);
+    }
+}
+
+GVariant *
+g_variant_from_vectors (const GVariantType *type,
+                        GVariantVector     *vectors,
+                        gsize               n_vectors,
+                        gsize               size,
+                        gboolean            trusted)
+{
+  GVariant *result;
+  GArray *tmp;
+
+  g_return_val_if_fail (vectors != NULL || n_vectors == 0, NULL);
+
+  if (size == 0)
+    return g_variant_new_serialised (g_variant_type_info_get (type), g_bytes_new (NULL, 0), NULL, 0, trusted);
+
+  tmp = g_array_new (FALSE, FALSE, sizeof (GVariantUnpacked));
+  result = g_variant_vector_deserialise (g_variant_type_info_get (type),
+                                         vectors, vectors + n_vectors - 1, size, trusted, tmp);
+  if (result)
+    g_variant_ref_sink (result);
+  g_array_free (tmp, TRUE);
+
+  return result;
 }
 
 /* -- public -- */
@@ -813,10 +1030,6 @@ g_variant_is_floating (GVariant *value)
 gsize
 g_variant_get_size (GVariant *value)
 {
-  g_variant_lock (value);
-  g_variant_ensure_size (value);
-  g_variant_unlock (value);
-
   return value->size;
 }
 
@@ -857,47 +1070,9 @@ g_variant_get_size (GVariant *value)
 gconstpointer
 g_variant_get_data (GVariant *value)
 {
-  g_variant_lock (value);
   g_variant_ensure_serialised (value);
-  g_variant_unlock (value);
 
   return value->contents.serialised.data;
-}
-
-/**
- * g_variant_get_data_as_bytes:
- * @value: a #GVariant
- *
- * Returns a pointer to the serialised form of a #GVariant instance.
- * The semantics of this function are exactly the same as
- * g_variant_get_data(), except that the returned #GBytes holds
- * a reference to the variant data.
- *
- * Returns: (transfer full): A new #GBytes representing the variant data
- *
- * Since: 2.36
- */ 
-GBytes *
-g_variant_get_data_as_bytes (GVariant *value)
-{
-  const gchar *bytes_data;
-  const gchar *data;
-  gsize bytes_size;
-  gsize size;
-
-  g_variant_lock (value);
-  g_variant_ensure_serialised (value);
-  g_variant_unlock (value);
-
-  bytes_data = g_bytes_get_data (value->contents.serialised.bytes, &bytes_size);
-  data = value->contents.serialised.data;
-  size = value->size;
-
-  if (data == bytes_data && size == bytes_size)
-    return g_bytes_ref (value->contents.serialised.bytes);
-  else
-    return g_bytes_new_from_bytes (value->contents.serialised.bytes,
-                                   data - bytes_data, size);
 }
 
 
@@ -926,9 +1101,12 @@ g_variant_n_children (GVariant *value)
 {
   gsize n_children;
 
-  g_variant_lock (value);
-
-  if (value->state & STATE_SERIALISED)
+  if (g_variant_lock_in_tree_form (value))
+    {
+      n_children = value->contents.tree.n_children;
+      g_variant_unlock (value);
+    }
+  else
     {
       GVariantSerialised serialised = {
         value->type_info,
@@ -938,10 +1116,6 @@ g_variant_n_children (GVariant *value)
 
       n_children = g_variant_serialised_n_children (serialised);
     }
-  else
-    n_children = value->contents.tree.n_children;
-
-  g_variant_unlock (value);
 
   return n_children;
 }
@@ -972,52 +1146,39 @@ GVariant *
 g_variant_get_child_value (GVariant *value,
                            gsize     index_)
 {
+  GVariant *child;
+
   g_return_val_if_fail (index_ < g_variant_n_children (value), NULL);
 
-  if (~g_atomic_int_get (&value->state) & STATE_SERIALISED)
+  if (g_variant_lock_in_tree_form (value))
     {
-      g_variant_lock (value);
 
-      if (~value->state & STATE_SERIALISED)
-        {
-          GVariant *child;
-
-          child = g_variant_ref (value->contents.tree.children[index_]);
-          g_variant_unlock (value);
-
-          return child;
-        }
-
+      child = g_variant_ref (value->contents.tree.children[index_]);
       g_variant_unlock (value);
     }
+  else
+    {
+      GVariantSerialised serialised = {
+        value->type_info,
+        (gpointer) value->contents.serialised.data,
+        value->size
+      };
+      GVariantSerialised s_child;
 
-  {
-    GVariantSerialised serialised = {
-      value->type_info,
-      (gpointer) value->contents.serialised.data,
-      value->size
-    };
-    GVariantSerialised s_child;
-    GVariant *child;
+      /* get the serialiser to extract the serialised data for the child
+       * from the serialised data for the container
+       */
+      s_child = g_variant_serialised_get_child (serialised, index_);
 
-    /* get the serialiser to extract the serialised data for the child
-     * from the serialised data for the container
-     */
-    s_child = g_variant_serialised_get_child (serialised, index_);
+      /* create a new serialised instance out of it */
+      child = g_variant_new_serialised (s_child.type_info,
+                                        g_bytes_ref (value->contents.serialised.bytes),
+                                        s_child.data, s_child.size,
+                                        value->state & STATE_TRUSTED);
+      child->state &= ~STATE_FLOATING;
+    }
 
-    /* create a new serialised instance out of it */
-    child = g_slice_new (GVariant);
-    child->type_info = s_child.type_info;
-    child->state = (value->state & STATE_TRUSTED) |
-                   STATE_SERIALISED;
-    child->size = s_child.size;
-    child->ref_count = 1;
-    child->contents.serialised.bytes =
-      g_bytes_ref (value->contents.serialised.bytes);
-    child->contents.serialised.data = s_child.data;
-
-    return child;
-  }
+  return child;
 }
 
 /**
@@ -1044,19 +1205,18 @@ void
 g_variant_store (GVariant *value,
                  gpointer  data)
 {
-  g_variant_lock (value);
-
-  if (value->state & STATE_SERIALISED)
+  if (g_variant_lock_in_tree_form (value))
+    {
+      g_variant_serialise (value, data);
+      g_variant_unlock (value);
+    }
+  else
     {
       if (value->contents.serialised.data != NULL)
         memcpy (data, value->contents.serialised.data, value->size);
       else
         memset (data, 0, value->size);
     }
-  else
-    g_variant_serialise (value, data);
-
-  g_variant_unlock (value);
 }
 
 /**
@@ -1081,9 +1241,13 @@ g_variant_store (GVariant *value,
 gboolean
 g_variant_is_normal_form (GVariant *value)
 {
-  if (value->state & STATE_TRUSTED)
+  if (g_atomic_int_get (&value->state) & STATE_TRUSTED)
     return TRUE;
 
+  /* We always take the lock here because we expect to find that the
+   * value is in normal form and in that case, we need to update the
+   * state, which requires holding the lock.
+   */
   g_variant_lock (value);
 
   if (value->state & STATE_SERIALISED)

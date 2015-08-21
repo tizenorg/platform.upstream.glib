@@ -100,6 +100,7 @@ typedef void (*GTestFixtureFunc) (gpointer      fixture,
 #ifdef G_DISABLE_ASSERT
 #define g_assert_not_reached()          G_STMT_START { (void) 0; } G_STMT_END
 #define g_assert(expr)                  G_STMT_START { (void) 0; } G_STMT_END
+#define g_assert_se(expr)               ((void) (expr))
 #else /* !G_DISABLE_ASSERT */
 #define g_assert_not_reached()          G_STMT_START { g_assertion_message_expr (G_LOG_DOMAIN, __FILE__, __LINE__, G_STRFUNC, NULL); } G_STMT_END
 #define g_assert(expr)                  G_STMT_START { \
@@ -107,6 +108,7 @@ typedef void (*GTestFixtureFunc) (gpointer      fixture,
                                                g_assertion_message_expr (G_LOG_DOMAIN, __FILE__, __LINE__, G_STRFUNC, \
                                                                          #expr); \
                                         } G_STMT_END
+#define g_assert_se(expr)               g_assert((expr))
 #endif /* !G_DISABLE_ASSERT */
 
 GLIB_AVAILABLE_IN_ALL
