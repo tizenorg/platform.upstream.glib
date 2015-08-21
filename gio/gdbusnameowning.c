@@ -296,40 +296,23 @@ on_name_lost_or_acquired (GDBusConnection  *connection,
 /* ---------------------------------------------------------------------------------------------------- */
 
 static void
-request_name_cb (GObject      *source_object,
-                 GAsyncResult *res,
-                 gpointer      user_data)
+process_request_name_reply (Client                    *client,
+                            GBusRequestNameReplyFlags  request_name_reply)
 {
-  Client *client = user_data;
-  GVariant *result;
-  guint32 request_name_reply;
   gboolean subscribe;
-
-  request_name_reply = 0;
-  result = NULL;
-
-  /* don't use client->connection - it may be NULL already */
-  result = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source_object),
-                                          res,
-                                          NULL);
-  if (result != NULL)
-    {
-      g_variant_get (result, "(u)", &request_name_reply);
-      g_variant_unref (result);
-    }
 
   subscribe = FALSE;
 
   switch (request_name_reply)
     {
-    case 1: /* DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER */
+    case G_BUS_REQUEST_NAME_FLAGS_PRIMARY_OWNER:
       /* We got the name - now listen for NameLost and NameAcquired */
       call_acquired_handler (client);
       subscribe = TRUE;
       client->needs_release = TRUE;
       break;
 
-    case 2: /* DBUS_REQUEST_NAME_REPLY_IN_QUEUE */
+    case G_BUS_REQUEST_NAME_FLAGS_IN_QUEUE:
       /* Waiting in line - listen for NameLost and NameAcquired */
       call_lost_handler (client);
       subscribe = TRUE;
@@ -338,8 +321,8 @@ request_name_cb (GObject      *source_object,
 
     default:
       /* assume we couldn't get the name - explicit fallthrough */
-    case 3: /* DBUS_REQUEST_NAME_REPLY_EXISTS */
-    case 4: /* DBUS_REQUEST_NAME_REPLY_ALREADY_OWNER */
+    case G_BUS_REQUEST_NAME_FLAGS_EXISTS:
+    case G_BUS_REQUEST_NAME_FLAGS_ALREADY_OWNER:
       /* Some other part of the process is already owning the name */
       call_lost_handler (client);
       break;
@@ -387,8 +370,6 @@ request_name_cb (GObject      *source_object,
           g_object_unref (connection);
         }
     }
-
-  client_unref (client);
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
@@ -421,27 +402,25 @@ on_connection_disconnected (GDBusConnection *connection,
 static void
 has_connection (Client *client)
 {
+  GError *error = NULL;
+  GBusRequestNameReplyFlags request_name_reply;
+
+  request_name_reply = G_BUS_REQUEST_NAME_FLAGS_ERROR;
+
   /* listen for disconnection */
   client->disconnected_signal_handler_id = g_signal_connect (client->connection,
                                                              "closed",
                                                              G_CALLBACK (on_connection_disconnected),
                                                              client);
-
   /* attempt to acquire the name */
-  g_dbus_connection_call (client->connection,
-                          "org.freedesktop.DBus",  /* bus name */
-                          "/org/freedesktop/DBus", /* object path */
-                          "org.freedesktop.DBus",  /* interface name */
-                          "RequestName",           /* method name */
-                          g_variant_new ("(su)",
-                                         client->name,
-                                         client->flags),
-                          G_VARIANT_TYPE ("(u)"),
-                          G_DBUS_CALL_FLAGS_NONE,
-                          -1,
-                          NULL,
-                          (GAsyncReadyCallback) request_name_cb,
-                          client_ref (client));
+  request_name_reply = g_dbus_request_name (client->connection, client->name, client->flags, &error);
+  if (request_name_reply == G_BUS_REQUEST_NAME_FLAGS_ERROR)
+    {
+      g_warning ("Error requesting name %s: %s", client->name, error->message);
+      g_error_free (error);
+    }
+
+  process_request_name_reply (client, request_name_reply);
 }
 
 
@@ -898,9 +877,10 @@ g_bus_unown_name (guint owner_id)
           client->connection != NULL &&
           !g_dbus_connection_is_closed (client->connection))
         {
-          GVariant *result;
+          GBusReleaseNameReplyFlags release_name_reply;
           GError *error;
-          guint32 release_name_reply;
+
+          error = NULL;
 
           /* TODO: it kinda sucks having to do a sync call to release the name - but if
            * we don't, then a subsequent grab of the name will make the bus daemon return
@@ -908,32 +888,16 @@ g_bus_unown_name (guint owner_id)
            *
            * I believe this is a bug in the bus daemon.
            */
-          error = NULL;
-          result = g_dbus_connection_call_sync (client->connection,
-                                                "org.freedesktop.DBus",  /* bus name */
-                                                "/org/freedesktop/DBus", /* object path */
-                                                "org.freedesktop.DBus",  /* interface name */
-                                                "ReleaseName",           /* method name */
-                                                g_variant_new ("(s)", client->name),
-                                                G_VARIANT_TYPE ("(u)"),
-                                                G_DBUS_CALL_FLAGS_NONE,
-                                                -1,
-                                                NULL,
-                                                &error);
-          if (result == NULL)
+
+          release_name_reply = g_dbus_release_name (client->connection, client->name, &error);
+          if (release_name_reply == G_BUS_RELEASE_NAME_FLAGS_ERROR)
             {
               g_warning ("Error releasing name %s: %s", client->name, error->message);
               g_error_free (error);
             }
           else
-            {
-              g_variant_get (result, "(u)", &release_name_reply);
-              if (release_name_reply != 1 /* DBUS_RELEASE_NAME_REPLY_RELEASED */)
-                {
-                  g_warning ("Unexpected reply %d when releasing name %s", release_name_reply, client->name);
-                }
-              g_variant_unref (result);
-            }
+            if (release_name_reply != G_BUS_RELEASE_NAME_FLAGS_RELEASED)
+              g_warning ("Unexpected reply %d when releasing name %s", release_name_reply, client->name);
         }
 
       if (client->disconnected_signal_handler_id > 0)

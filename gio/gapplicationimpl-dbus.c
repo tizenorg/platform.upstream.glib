@@ -346,8 +346,7 @@ g_application_impl_attempt_primary (GApplicationImpl  *impl,
     NULL /* set_property */
   };
   GApplicationClass *app_class = G_APPLICATION_GET_CLASS (impl->app);
-  GVariant *reply;
-  guint32 rval;
+  GBusRequestNameReplyFlags rval;
 
   if (org_gtk_Application == NULL)
     {
@@ -425,19 +424,13 @@ g_application_impl_attempt_primary (GApplicationImpl  *impl,
    * in the case that we can't do that.
    */
   /* DBUS_NAME_FLAG_DO_NOT_QUEUE: 0x4 */
-  reply = g_dbus_connection_call_sync (impl->session_bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
-                                       "org.freedesktop.DBus", "RequestName",
-                                       g_variant_new ("(su)", impl->bus_name, 0x4), G_VARIANT_TYPE ("(u)"),
-                                       0, -1, cancellable, error);
+  rval = g_dbus_request_name (impl->session_bus, impl->bus_name, G_BUS_NAME_OWNER_FLAGS_DO_NOT_QUEUE, error);
 
-  if (reply == NULL)
+  if (rval == G_BUS_REQUEST_NAME_FLAGS_ERROR)
     return FALSE;
 
-  g_variant_get (reply, "(u)", &rval);
-  g_variant_unref (reply);
-
   /* DBUS_REQUEST_NAME_REPLY_EXISTS: 3 */
-  impl->primary = (rval != 3);
+  impl->primary = (rval != G_BUS_REQUEST_NAME_FLAGS_EXISTS);
 
   return TRUE;
 }
@@ -479,10 +472,7 @@ g_application_impl_stop_primary (GApplicationImpl *impl)
 
   if (impl->primary && impl->bus_name)
     {
-      g_dbus_connection_call (impl->session_bus, "org.freedesktop.DBus",
-                              "/org/freedesktop/DBus", "org.freedesktop.DBus",
-                              "ReleaseName", g_variant_new ("(s)", impl->bus_name),
-                              NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
+      g_dbus_release_name (impl->session_bus, impl->bus_name, NULL);
       impl->primary = FALSE;
     }
 }
@@ -852,13 +842,13 @@ g_dbus_command_line_get_stdin (GApplicationCommandLine *cmdline)
 
   if (fd_list && g_unix_fd_list_get_length (fd_list))
     {
-      gint *fds, n_fds, i;
+      const gint *fds;
 
-      fds = g_unix_fd_list_steal_fds (fd_list, &n_fds);
-      result = g_unix_input_stream_new (fds[0], TRUE);
-      for (i = 1; i < n_fds; i++)
-        (void) g_close (fds[i], NULL);
-      g_free (fds);
+      fds = g_unix_fd_list_peek_fds (fd_list, NULL);
+      result = g_unix_input_stream_new (fds[0], FALSE);
+      g_object_weak_ref (G_OBJECT (result),
+                         (GWeakNotify) g_object_unref,
+                         g_object_ref (fd_list));
     }
 
   return result;

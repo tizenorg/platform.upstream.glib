@@ -254,6 +254,10 @@ platform_libadd += xdgmime/libxdgmime.la
 platform_deps += xdgmime/libxdgmime.la
 unix_sources = \
 	gfiledescriptorbased.c  \
+	gkdbus.c		\
+	gkdbus.h		\
+	gkdbusfakedaemon.c	\
+	gkdbusfakedaemon.h	\
 	gunixconnection.c	\
 	gunixcredentialsmessage.c	\
 	gunixfdlist.c		\
