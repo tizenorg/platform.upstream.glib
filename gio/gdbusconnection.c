@@ -2962,7 +2962,6 @@ g_dbus_connection_send_message_with_reply_sync (GDBusConnection        *connecti
   else if (connection->kdbus_worker)
     {
       /* kdbus supports blocking synchronous calls, so let's use them instead of mainloops */
-      /* TODO: Add support for GCancellable - https://developer.gnome.org/gio/stable/GTask.html */
 
       volatile guint32 serial;
       guint32 serial_to_use;
@@ -2977,10 +2976,27 @@ g_dbus_connection_send_message_with_reply_sync (GDBusConnection        *connecti
       else
         *out_serial = 0;
 
+      /*
+       * Check that we never actually send a message if the GCancellable
+       * is already cancelled
+       */
+      if (g_cancellable_is_cancelled (cancellable))
+        {
+          g_set_error_literal (error,
+                               G_IO_ERROR,
+                               G_IO_ERROR_CANCELLED,
+                               _("Operation was cancelled"));
+          CONNECTION_UNLOCK (connection);
+          goto out;
+        }
+
       if (!check_unclosed (connection,
                            (flags & SEND_MESSAGE_FLAGS_INITIALIZING) ? MAY_BE_UNINITIALIZED : 0,
                            error))
-        goto out;
+        {
+          CONNECTION_UNLOCK (connection);
+          goto out;
+        }
 
       if (!(flags & G_DBUS_SEND_MESSAGE_FLAGS_PRESERVE_SERIAL))
         g_dbus_message_set_serial (message, ++connection->last_serial);
@@ -2992,7 +3008,8 @@ g_dbus_connection_send_message_with_reply_sync (GDBusConnection        *connecti
       if (out_serial != NULL)
         *out_serial = serial_to_use;
 
-      _g_kdbus_worker_send_message_sync (connection->kdbus_worker, message, &reply, timeout_msec, error);
+      _g_kdbus_worker_send_message_sync (connection->kdbus_worker, message,
+                                         &reply, timeout_msec, cancellable, error);
 
       CONNECTION_UNLOCK (connection);
     }

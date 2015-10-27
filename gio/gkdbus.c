@@ -58,7 +58,7 @@
 #include "gunixfdmessage.h"
 
 #define KDBUS_MSG_MAX_SIZE         8192
-#define KDBUS_DEFAULT_TIMEOUT_NS   2000000000LU
+#define KDBUS_DEFAULT_TIMEOUT_NS   5000000000LU
 #define KDBUS_POOL_SIZE            (16 * 1024LU * 1024LU)
 #define KDBUS_ALIGN8(l)            (((l) + 7) & ~7)
 #define KDBUS_ALIGN8_PTR(p)        ((void*) (uintptr_t)(p))
@@ -169,6 +169,7 @@ static gboolean  _g_kdbus_send    (GKDBusWorker  *worker,
                                    GDBusMessage  *message,
                                    GDBusMessage **reply,
                                    gint           timeout_msec,
+                                   GCancellable  *cancellable,
                                    GError       **error);
 
 static void      _g_kdbus_receive (GKDBusWorker  *worker,
@@ -1517,7 +1518,7 @@ _g_kdbus_StartServiceByName (GKDBusWorker  *worker,
       message = g_dbus_message_new_method_call (name, "/", "org.freedesktop.DBus.Peer", "Ping");
       g_dbus_message_set_serial (message, -1);
 
-      ret = _g_kdbus_send (worker, message, &reply, 25000, NULL);
+      ret = _g_kdbus_send (worker, message, &reply, 25000, NULL, NULL);
       if (!ret)
         {
           g_set_error (error,
@@ -1860,10 +1861,16 @@ _g_kdbus_RemoveMatch (GKDBusWorker  *worker,
       ret = ioctl(worker->fd, KDBUS_CMD_MATCH_REMOVE, &cmd);
       if (ret < 0)
         {
-          g_set_error (error,
-                       G_DBUS_ERROR,
-                       G_DBUS_ERROR_FAILED,
-                       "Error while removing a match");
+          if (errno == EBADSLT)
+            {
+              g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_MATCH_RULE_NOT_FOUND,
+                           "A match entry with the given cookie could not be found");
+            }
+          else
+            {
+              g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_FAILED,
+                           "Error while removing a match");
+            }
           match_free (match);
           return FALSE;
         }
@@ -2556,7 +2563,7 @@ g_kdbus_decode_kernel_msg (GKDBusWorker      *worker,
             break;
 
           default:
-            g_warning ("Unknown field in kernel message - %lld", item->type);
+            g_warning ("kdbus: unknown field in kernel message - %lld", item->type);
        }
     }
 }
@@ -2702,7 +2709,7 @@ g_kdbus_decode_dbus_msg (GKDBusWorker      *worker,
           break;
 
         default:
-          g_warning ("[KDBUS] DBUS_PAYLOAD: Unknown filed - %lld", item->type);
+          g_warning ("kdbus: unknown filed - %lld", item->type);
           break;
         }
     }
@@ -2755,10 +2762,7 @@ g_kdbus_decode_dbus_msg (GKDBusWorker      *worker,
 
   /* set 'sender' field */
   sender = g_strdup_printf (":1.%"G_GUINT64_FORMAT, (guint64) msg->src_id);
-  if (!g_strcmp0 (worker->unique_name, sender))
-    g_dbus_message_set_sender (message, "org.freedesktop.DBus");
-  else
-    g_dbus_message_set_sender (message, sender);
+  g_dbus_message_set_sender (message, sender);
   g_free (sender);
 
   return message;
@@ -2774,12 +2778,18 @@ _g_kdbus_receive (GKDBusWorker  *worker,
 {
   struct kdbus_cmd_recv recv;
   struct kdbus_msg *msg;
+  gint ret;
 
   memset (&recv, 0, sizeof recv);
   recv.size = sizeof (recv);
 
 again:
-    if (ioctl(worker->fd, KDBUS_CMD_RECV, &recv) < 0)
+    ret = ioctl (worker->fd, KDBUS_CMD_RECV, &recv);
+
+    if (recv.return_flags & KDBUS_RECV_RETURN_DROPPED_MSGS)
+      g_warning ("kdbus: %lld dropped broadcast messages", recv.dropped_msgs);
+
+    if (ret < 0)
       {
         if (errno == EINTR)
           goto again;
@@ -2904,6 +2914,7 @@ _g_kdbus_send (GKDBusWorker  *worker,
                GDBusMessage  *message,
                GDBusMessage **out_reply,
                gint           timeout_msec,
+               GCancellable  *cancellable,
                GError       **error)
 {
   struct kdbus_msg *msg;
@@ -2911,17 +2922,18 @@ _g_kdbus_send (GKDBusWorker  *worker,
   struct kdbus_cmd_send send;
   const gchar *dst_name;
   gboolean result;
+  int cancel_fd;
 
   g_return_val_if_fail (G_IS_KDBUS_WORKER (worker), FALSE);
 
   msg = alloca (KDBUS_MSG_MAX_SIZE);
   result = TRUE;
+  cancel_fd = -1;
 
   /* fill in as we go... */
   memset (msg, 0, sizeof (struct kdbus_msg));
   msg->size = sizeof (struct kdbus_msg);
   msg->payload_type = KDBUS_PAYLOAD_DBUS;
-  msg->src_id = worker->unique_id;
   msg->cookie = g_dbus_message_get_serial(message);
 
   /* Message destination */
@@ -3110,9 +3122,16 @@ _g_kdbus_send (GKDBusWorker  *worker,
                 ((g_dbus_message_get_flags (message) & G_DBUS_MESSAGE_FLAGS_NO_AUTO_START) ? KDBUS_MSG_NO_AUTO_START : 0);
 
   if ((msg->flags) & KDBUS_MSG_EXPECT_REPLY)
-    msg->timeout_ns = 1000LU * g_get_monotonic_time() + KDBUS_DEFAULT_TIMEOUT_NS;
+    {
+      if (timeout_msec != -1)
+        msg->timeout_ns = 1000LU * g_get_monotonic_time() + (timeout_msec * 1000000LU);
+      else
+        msg->timeout_ns = 1000LU * g_get_monotonic_time() + KDBUS_DEFAULT_TIMEOUT_NS;
+    }
   else
-    msg->cookie_reply = g_dbus_message_get_reply_serial(message);
+    {
+      msg->cookie_reply = g_dbus_message_get_reply_serial(message);
+    }
 
   /*
    * append bloom filter item for broadcast signals
@@ -3132,9 +3151,31 @@ _g_kdbus_send (GKDBusWorker  *worker,
   send.msg_address = (gsize) msg;
 
   if (out_reply != NULL)
-    send.flags = KDBUS_SEND_SYNC_REPLY;
+    {
+      /* synchronous call */
+      send.flags = KDBUS_SEND_SYNC_REPLY;
+
+      if (cancellable)
+        {
+          struct kdbus_item *item;
+
+          cancel_fd = g_cancellable_get_fd (cancellable);
+          if (cancel_fd != -1)
+            {
+              send.size += KDBUS_ITEM_SIZE (sizeof(cancel_fd));
+
+              item = send.items;
+              item->type = KDBUS_ITEM_CANCEL_FD;
+              item->size = KDBUS_ITEM_HEADER_SIZE + sizeof(cancel_fd);
+              item->fds[0] = cancel_fd;
+            }
+        }
+    }
   else
-    send.flags = 0;
+    {
+      /* asynchronous call */
+      send.flags = 0;
+    }
 
   /*
    * show debug
@@ -3185,9 +3226,14 @@ _g_kdbus_send (GKDBusWorker  *worker,
           g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_LIMITS_EXCEEDED,
                        "The size of the message is excessive");
         }
+      else if (errno == ECANCELED)
+        {
+          g_set_error (error, G_IO_ERROR, G_IO_ERROR_CANCELLED,
+                       "Operation was cancelled");
+        }
       else
         {
-          g_warning ("Error: %s\n", strerror(errno));
+          g_warning ("kdbus: %s", strerror(errno));
           g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_FAILED,
                        "%s", strerror(errno));
         }
@@ -3216,6 +3262,9 @@ _g_kdbus_send (GKDBusWorker  *worker,
         }
     }
 
+  if (cancel_fd != -1)
+    g_cancellable_release_fd (cancellable);
+
   GLIB_PRIVATE_CALL(g_variant_vectors_deinit) (&body_vectors);
 
   return result;
@@ -3226,7 +3275,7 @@ need_compact:
    *  - too large kdbus_msg size
    *  - too much vector data
    */
-  g_warning ("Message serialisation error");
+  g_warning ("kdbus: message serialisation error");
   g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_FAILED,
                "message serialisation error");
 
@@ -3418,7 +3467,7 @@ _g_kdbus_worker_send_message (GKDBusWorker  *worker,
     }
 #endif /* DBUS_DAEMON_EMULATION */
 
-  return _g_kdbus_send (worker, message, NULL, timeout_msec, error);
+  return _g_kdbus_send (worker, message, NULL, timeout_msec, NULL, error);
 }
 
 gboolean
@@ -3426,6 +3475,7 @@ _g_kdbus_worker_send_message_sync (GKDBusWorker  *worker,
                                    GDBusMessage  *message,
                                    GDBusMessage **out_reply,
                                    gint           timeout_msec,
+                                   GCancellable  *cancellable,
                                    GError       **error)
 {
 #ifdef DBUS_DAEMON_EMULATION
@@ -3436,7 +3486,7 @@ _g_kdbus_worker_send_message_sync (GKDBusWorker  *worker,
     }
 #endif /* DBUS_DAEMON_EMULATION */
 
-  return _g_kdbus_send (worker, message, out_reply, timeout_msec, error);
+  return _g_kdbus_send (worker, message, out_reply, timeout_msec, cancellable, error);
 }
 
 gboolean

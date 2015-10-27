@@ -83,6 +83,7 @@ gboolean              _g_kdbus_worker_send_message_sync      (GKDBusWorker      
                                                               GDBusMessage        *message,
                                                               GDBusMessage       **out_reply,
                                                               gint                 timeout_msec,
+                                                              GCancellable        *cancellable,
                                                               GError             **error);
 
 void                  _g_kdbus_worker_stop                   (GKDBusWorker        *worker);
