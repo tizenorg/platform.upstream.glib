@@ -569,7 +569,6 @@ _g_kdbus_close (GKDBusWorker *worker)
 
   g_main_loop_quit (worker->loop);
   g_main_loop_unref (worker->loop);
-  worker->loop = NULL;
 
   /* g_thread_join (worker->thread); FIXME */
   g_thread_unref (worker->thread);
@@ -3347,6 +3346,7 @@ _g_kdbus_worker_thread (gpointer _data)
 
   g_main_loop_run (worker->loop);
 
+  g_object_unref (worker);
   return NULL;
 }
 
@@ -3365,7 +3365,7 @@ _g_kdbus_worker_new (const gchar  *address,
 
   worker->context = g_main_context_new ();
   worker->loop = g_main_loop_new (worker->context, FALSE);
-  worker->thread = g_thread_new ("gkdbus", _g_kdbus_worker_thread, worker);
+  worker->thread = g_thread_new ("gkdbus", _g_kdbus_worker_thread, g_object_ref(worker));
 
   return worker;
 }
