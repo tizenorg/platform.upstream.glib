@@ -238,10 +238,8 @@ _dbus_daemon_synthetic_reply (GKDBusWorker  *worker,
                   label_size = strlen (creds->sec_label);
                   label_builder = g_variant_builder_new (G_VARIANT_TYPE ("ay"));
                   for (counter = 0 ; counter < label_size ; counter++)
-                    {
-                      g_variant_builder_add (label_builder, "y", creds->sec_label);
-                      creds->sec_label++;
-                    }
+                    g_variant_builder_add (label_builder, "y", creds->sec_label[counter]);
+
                   g_variant_builder_add (&builder, "{sv}", "LinuxSecurityLabel", g_variant_new ("ay", label_builder));
 
                   g_variant_builder_unref (label_builder);
@@ -281,12 +279,10 @@ _dbus_daemon_synthetic_reply (GKDBusWorker  *worker,
 
               g_variant_builder_init (&builder, G_VARIANT_TYPE ("a{sv}"));
               for (counter = 0 ; counter < strlen (label) ; counter++)
-                {
-                  g_variant_builder_add (&builder, "y", label);
-                  label++;
-                }
-                reply_body = g_variant_builder_end (&builder);
-                g_free (label);
+                g_variant_builder_add (&builder, "y", label[counter]);
+
+              reply_body = g_variant_builder_end (&builder);
+              g_free (label);
             }
         }
       else
