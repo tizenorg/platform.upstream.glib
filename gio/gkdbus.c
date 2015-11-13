@@ -838,6 +838,9 @@ _g_kdbus_RequestName (GKDBusWorker        *worker,
           return G_BUS_REQUEST_NAME_FLAGS_ERROR;
         }
     }
+  else if ((cmd->return_flags & KDBUS_NAME_PRIMARY)
+      && !(cmd->return_flags & KDBUS_NAME_ACQUIRED))
+    status = G_BUS_REQUEST_NAME_FLAGS_ALREADY_OWNER;
 
   if (cmd->return_flags & KDBUS_NAME_IN_QUEUE)
     status = G_BUS_REQUEST_NAME_FLAGS_IN_QUEUE;
