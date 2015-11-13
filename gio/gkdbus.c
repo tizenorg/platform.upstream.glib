@@ -549,6 +549,12 @@ _g_kdbus_open (GKDBusWorker  *worker,
   return TRUE;
 }
 
+static gboolean
+_g_kdbus_quit_loop (gpointer loop)
+{
+  g_main_loop_quit ((GMainLoop*)loop);
+  return TRUE;
+}
 
 /*
  * _g_kdbus_close
@@ -564,13 +570,14 @@ _g_kdbus_close (GKDBusWorker *worker)
   g_source_destroy (worker->source);
   worker->source = 0;
 
+  g_main_context_invoke (worker->context, _g_kdbus_quit_loop, worker->loop);
+
   g_main_context_unref (worker->context);
   worker->context = NULL;
 
-  g_main_loop_quit (worker->loop);
   g_main_loop_unref (worker->loop);
 
-  /* g_thread_join (worker->thread); FIXME */
+  g_thread_join (worker->thread);
   g_thread_unref (worker->thread);
   worker->thread = NULL;
 
@@ -3345,11 +3352,12 @@ g_kdbus_worker_init (GKDBusWorker *worker)
 static gpointer
 _g_kdbus_worker_thread (gpointer _data)
 {
-  GKDBusWorker *worker = (GKDBusWorker *)_data;
+  GMainLoop *loop = (GMainLoop *) _data;
 
-  g_main_loop_run (worker->loop);
+  g_main_loop_run (loop);
 
-  g_object_unref (worker);
+  g_main_loop_unref (loop);
+
   return NULL;
 }
 
@@ -3368,7 +3376,7 @@ _g_kdbus_worker_new (const gchar  *address,
 
   worker->context = g_main_context_new ();
   worker->loop = g_main_loop_new (worker->context, FALSE);
-  worker->thread = g_thread_new ("gkdbus", _g_kdbus_worker_thread, g_object_ref(worker));
+  worker->thread = g_thread_new ("gkdbus", _g_kdbus_worker_thread, g_main_loop_ref(worker->loop));
 
   return worker;
 }
