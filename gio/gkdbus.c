@@ -2928,12 +2928,16 @@ _g_kdbus_send (GKDBusWorker  *worker,
 {
   struct kdbus_msg *msg;
   GVariantVectors body_vectors;
-  struct kdbus_cmd_send send;
+  struct kdbus_cmd_send *send;
+  gsize send_size;
   const gchar *dst_name;
   gboolean result;
   int cancel_fd;
 
   g_return_val_if_fail (G_IS_KDBUS_WORKER (worker), FALSE);
+
+  send = NULL;
+  send_size = sizeof(*send);
 
   msg = alloca (KDBUS_MSG_MAX_SIZE);
   result = TRUE;
@@ -3156,34 +3160,36 @@ _g_kdbus_send (GKDBusWorker  *worker,
       g_kdbus_setup_bloom (worker, message, bloom_filter);
     }
 
-  send.size = sizeof (send);
-  send.msg_address = (gsize) msg;
+  if (out_reply != NULL && cancellable)
+    {
+      cancel_fd = g_cancellable_get_fd (cancellable);
+      if (cancel_fd != -1)
+        send_size += KDBUS_ITEM_SIZE (sizeof(cancel_fd));
+    }
+
+  send = g_alloca0 (send_size);
+  send->size = send_size;
+  send->msg_address = (gsize) msg;
 
   if (out_reply != NULL)
     {
       /* synchronous call */
-      send.flags = KDBUS_SEND_SYNC_REPLY;
+      send->flags = KDBUS_SEND_SYNC_REPLY;
 
-      if (cancellable)
+      if (cancel_fd != -1)
         {
           struct kdbus_item *item;
 
-          cancel_fd = g_cancellable_get_fd (cancellable);
-          if (cancel_fd != -1)
-            {
-              send.size += KDBUS_ITEM_SIZE (sizeof(cancel_fd));
-
-              item = send.items;
-              item->type = KDBUS_ITEM_CANCEL_FD;
-              item->size = KDBUS_ITEM_HEADER_SIZE + sizeof(cancel_fd);
-              item->fds[0] = cancel_fd;
-            }
+          item = send->items;
+          item->type = KDBUS_ITEM_CANCEL_FD;
+          item->size = KDBUS_ITEM_HEADER_SIZE + sizeof(cancel_fd);
+          item->fds[0] = cancel_fd;
         }
     }
   else
     {
       /* asynchronous call */
-      send.flags = 0;
+      send->flags = 0;
     }
 
   /*
@@ -3208,7 +3214,7 @@ _g_kdbus_send (GKDBusWorker  *worker,
   /*
    * send message
    */
-  if (ioctl(worker->fd, KDBUS_CMD_SEND, &send))
+  if (ioctl(worker->fd, KDBUS_CMD_SEND, send))
     {
       if (errno == ENXIO || errno == ESRCH)
         {
@@ -3252,7 +3258,7 @@ _g_kdbus_send (GKDBusWorker  *worker,
     {
       struct kdbus_msg *kmsg;
 
-      kmsg = (struct kdbus_msg *)((guint8 *)worker->kdbus_buffer + send.reply.offset);
+      kmsg = (struct kdbus_msg *)((guint8 *)worker->kdbus_buffer + send->reply.offset);
 
       *out_reply = g_kdbus_decode_dbus_msg (worker, kmsg);
       g_kdbus_close_msg (worker, kmsg);
