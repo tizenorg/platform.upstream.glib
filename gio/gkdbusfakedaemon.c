@@ -151,6 +151,20 @@ _dbus_daemon_synthetic_reply (GKDBusWorker  *worker,
   member = g_dbus_message_get_member (message);
   body = g_dbus_message_get_body (message);
 
+  /* show debug */
+  if (G_UNLIKELY (_g_dbus_debug_message ()))
+    {
+      gchar *s;
+      _g_dbus_debug_print_lock ();
+      g_print ("========================================================================\n"
+               "GDBus-debug:Message:\n"
+               "  >>>> SENT D-Bus/kdbus message\n");
+      s = g_dbus_message_print (message, 2);
+      g_print ("%s", s);
+      g_free (s);
+      _g_dbus_debug_print_unlock ();
+    }
+
   /*
    * Introspect
    */
@@ -337,11 +351,11 @@ _dbus_daemon_synthetic_reply (GKDBusWorker  *worker,
    */
   else if (!g_strcmp0 (member, "GetId"))
     {
-      if ((body == NULL) || g_variant_is_of_type (body, G_VARIANT_TYPE_TUPLE))
+      if ((body == NULL) || g_variant_is_of_type (body, G_VARIANT_TYPE ("()")))
         {
           gchar *bus_id;
 
-          bus_id = _g_kdbus_GetBusId (worker, &local_error);
+          bus_id = _g_kdbus_GetBusId (worker, NULL);
           reply_body = g_variant_new ("(s)", bus_id);
 
           g_free (bus_id);
@@ -378,7 +392,7 @@ _dbus_daemon_synthetic_reply (GKDBusWorker  *worker,
    */
   else if (!g_strcmp0 (member, "Hello"))
     {
-      if ((body == NULL) || g_variant_is_of_type (body, G_VARIANT_TYPE_TUPLE))
+      if ((body == NULL) || g_variant_is_of_type (body, G_VARIANT_TYPE ("()")))
         {
           const gchar *unique_name;
 
@@ -396,7 +410,7 @@ _dbus_daemon_synthetic_reply (GKDBusWorker  *worker,
    */
   else if (!g_strcmp0 (member, "ListActivatableNames"))
     {
-      if ((body == NULL) || g_variant_is_of_type (body, G_VARIANT_TYPE_TUPLE))
+      if ((body == NULL) || g_variant_is_of_type (body, G_VARIANT_TYPE ("()")))
         {
           gchar **strv;
           gint cnt;
@@ -429,7 +443,7 @@ _dbus_daemon_synthetic_reply (GKDBusWorker  *worker,
    */
   else if (!g_strcmp0 (member, "ListNames"))
     {
-      if ((body == NULL) || g_variant_is_of_type (body, G_VARIANT_TYPE_TUPLE))
+      if ((body == NULL) || g_variant_is_of_type (body, G_VARIANT_TYPE ("()")))
         {
           gchar **strv;
           gint cnt;
@@ -544,7 +558,7 @@ _dbus_daemon_synthetic_reply (GKDBusWorker  *worker,
    */
   else if (!g_strcmp0 (member, "ReloadConfig"))
     {
-      if ((body == NULL) || g_variant_is_of_type (body, G_VARIANT_TYPE_TUPLE))
+      if ((body == NULL) || g_variant_is_of_type (body, G_VARIANT_TYPE ("()")))
         reply_body = g_variant_new ("()", NULL);
       else
         g_set_error (&local_error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
@@ -613,7 +627,7 @@ _dbus_daemon_synthetic_reply (GKDBusWorker  *worker,
                    "org.freedesktop.DBus does not understand message %s", member);
     }
 
-  if (reply_body == NULL)
+  if (reply_body == NULL && local_error)
     {
       gchar *dbus_error_name;
 
