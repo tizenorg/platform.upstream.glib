@@ -537,7 +537,7 @@ _g_kdbus_open (GKDBusWorker  *worker,
 {
   g_return_val_if_fail (G_IS_KDBUS_WORKER (worker), FALSE);
 
-  worker->fd = open(address, O_RDWR|O_NOCTTY|O_CLOEXEC);
+  worker->fd = g_open(address, O_RDWR|O_NOCTTY|O_CLOEXEC, 0);
   if (worker->fd<0)
     {
       g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_FAILED, _("Can't open kdbus endpoint"));
@@ -2307,7 +2307,7 @@ g_kdbus_setup_bloom (GKDBusWorker               *worker,
                      struct kdbus_bloom_filter  *bloom_filter)
 {
   GVariant *body;
-  const gchar *message_type;
+  gchar *message_type;
   const gchar *interface;
   const gchar *member;
   const gchar *path;
@@ -2391,6 +2391,7 @@ g_kdbus_setup_bloom (GKDBusWorker               *worker,
           g_variant_unref (child);
         }
     }
+  g_free (message_type);
 }
 
 
@@ -3195,20 +3196,17 @@ _g_kdbus_send (GKDBusWorker  *worker,
   /*
    * show debug
    */
-  if (g_strcmp0 (worker->unique_name, dst_name))
+  if (G_UNLIKELY (_g_dbus_debug_message ()))
     {
-      if (G_UNLIKELY (_g_dbus_debug_message ()))
-        {
-          gchar *s;
-          _g_dbus_debug_print_lock ();
-          g_print ("========================================================================\n"
-                   "GDBus-debug:Message:\n"
-                   "  >>>> SENT D-Bus/kdbus message\n");
-          s = g_dbus_message_print (message, 2);
-          g_print ("%s", s);
-          g_free (s);
-          _g_dbus_debug_print_unlock ();
-        }
+      gchar *s;
+      _g_dbus_debug_print_lock ();
+      g_print ("========================================================================\n"
+               "GDBus-debug:Message:\n"
+               "  >>>> SENT D-Bus/kdbus message\n");
+      s = g_dbus_message_print (message, 2);
+      g_print ("%s", s);
+      g_free (s);
+      _g_dbus_debug_print_unlock ();
     }
 
   /*
@@ -3248,9 +3246,9 @@ _g_kdbus_send (GKDBusWorker  *worker,
         }
       else
         {
-          g_warning ("kdbus: %s", strerror(errno));
+          g_warning ("kdbus: %s", g_strerror(errno));
           g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_FAILED,
-                       "%s", strerror(errno));
+                       "%s", g_strerror(errno));
         }
       result = FALSE;
     }
