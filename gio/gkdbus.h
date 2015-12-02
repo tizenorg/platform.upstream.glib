@@ -58,6 +58,15 @@ typedef struct
   gchar  *sec_label;
 } GDBusCredentials;
 
+typedef struct
+{
+  GDBusMessage  *message;
+  uid_t          sender_euid;
+  gid_t          sender_egid;
+  gchar         *sender_seclabel;
+  gchar         *sender_names;
+} GKDBusMessage;
+
 typedef struct _GKDBusWorker                                  GKDBusWorker;
 
 void                  _g_kdbus_worker_associate              (GKDBusWorker                             *worker,
