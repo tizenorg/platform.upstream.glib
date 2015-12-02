@@ -217,6 +217,10 @@ platform_libadd =
 platform_deps =
 appinfo_sources =
 
+if LIBDBUSPOLICY
+platform_libadd += $(LIBDBUSPOLICY1_LIBS)
+endif
+
 if HAVE_INOTIFY
 SUBDIRS += inotify
 platform_libadd += inotify/libinotify.la
@@ -533,6 +537,10 @@ if OS_COCOA
 # This is dumb.  The ObjC source file should be properly named .m
 libgio_2_0_la_CFLAGS += -xobjective-c
 libgio_2_0_la_LDFLAGS += -Wl,-framework,Foundation
+endif
+
+if LIBDBUSPOLICY
+libgio_2_0_la_CPPFLAGS += $(LIBDBUSPOLICY1_CFLAGS)
 endif
 
 libgio_2_0_la_DEPENDENCIES = $(gio_win32_res) $(gio_def) $(platform_deps)
