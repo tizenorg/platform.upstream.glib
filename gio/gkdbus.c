@@ -44,6 +44,10 @@
 #include <sys/uio.h>
 #endif
 
+#ifdef LIBDBUSPOLICY
+#include <dbuspolicy1/libdbuspolicy1.h>
+#endif
+
 #define DBUS_DAEMON_EMULATION
 #ifdef DBUS_DAEMON_EMULATION
 #include "gkdbusfakedaemon.h"
@@ -157,6 +161,10 @@ struct _GKDBusWorker
   guchar             bus_id[16];
 
   GList             *matches;
+
+#ifdef LIBDBUSPOLICY
+  void              *dbuspolicy;
+#endif
 
   GDBusCapabilityFlags                     capabilities;
   GDBusWorkerMessageReceivedCallback       message_received_callback;
@@ -544,6 +552,37 @@ _g_kdbus_open (GKDBusWorker  *worker,
       return FALSE;
     }
 
+#ifdef LIBDBUSPOLICY
+  {
+    gint bus_type;
+
+    if (g_str_has_prefix (address, "/sys/fs/kdbus/"))
+      {
+        if (g_str_has_suffix (address, "-system/bus"))
+          bus_type = SYSTEM_BUS;
+        else if (g_str_has_suffix (address, "-user/bus"))
+          bus_type = SESSION_BUS;
+        else
+          g_assert_not_reached();
+      }
+    else
+      {
+        g_assert_not_reached();
+      }
+
+    worker->dbuspolicy = dbuspolicy1_init (bus_type);
+    if (worker->dbuspolicy == NULL)
+      {
+        g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_FAILED, _("Can't load xml dbus policy"));
+
+        close (worker->fd);
+        worker->fd = -1;
+
+        return FALSE;
+      }
+  }
+#endif
+
   worker->closed = FALSE;
 
   return TRUE;
@@ -817,6 +856,18 @@ _g_kdbus_RequestName (GKDBusWorker        *worker,
                    "Cannot acquire a service starting with ':' such as \"%s\"", name);
       return G_BUS_REQUEST_NAME_FLAGS_ERROR;
     }
+
+#ifdef LIBDBUSPOLICY
+  if (dbuspolicy1_can_own (worker->dbuspolicy, name) != 1)
+    {
+      g_set_error (error,
+                   G_DBUS_ERROR,
+                   G_DBUS_ERROR_ACCESS_DENIED,
+                   "Connection \"%s\" is not allowed to own the \
+                    service \"%s\" due to security policies", worker->unique_name, name);
+      return G_BUS_REQUEST_NAME_FLAGS_ERROR;
+    }
+#endif
 
   g_kdbus_translate_nameowner_flags (flags, &kdbus_flags);
 
@@ -2509,6 +2560,31 @@ g_kdbus_translate_name_change (GKDBusWorker       *worker,
 
 
 /*
+ * g_kdbus_access_denied_reply
+ */
+static GDBusMessage *
+g_kdbus_access_denied_reply (GKDBusWorker  *worker,
+                             guint32        reply_serial)
+{
+  GDBusMessage *message;
+
+  message = g_dbus_message_new ();
+
+  g_dbus_message_set_message_type (message, G_DBUS_MESSAGE_TYPE_ERROR);
+  g_dbus_message_set_flags (message, G_DBUS_MESSAGE_FLAGS_NO_REPLY_EXPECTED);
+  g_dbus_message_set_reply_serial (message, reply_serial);
+
+  g_dbus_message_set_sender (message, "org.freedesktop.DBus");
+  g_dbus_message_set_destination (message, worker->unique_name);
+
+  g_dbus_message_set_error_name (message, "org.freedesktop.DBus.Error.AccessDenied");
+  g_dbus_message_set_body (message, g_variant_new ("(s)", "Cannot receive message - message rejected due to security policies"));
+
+  return message;
+}
+
+
+/*
  * g_kdbus_translate_kernel_reply
  */
 static void
@@ -2582,31 +2658,36 @@ g_kdbus_decode_kernel_msg (GKDBusWorker      *worker,
 /*
  * g_kdbus_decode_dbus_msg
  */
-static GDBusMessage *
+static GKDBusMessage *
 g_kdbus_decode_dbus_msg (GKDBusWorker      *worker,
                          struct kdbus_msg  *msg)
 {
-  GDBusMessage *message;
+  GKDBusMessage *kmsg;
   struct kdbus_item *item;
   gssize data_size = 0;
   GArray *body_vectors;
   gsize body_size;
-  GVariant *body;
+  GVariant *body, *value;
   gchar *sender;
   guint i;
   GVariant *parts[2];
   GVariantIter *fields_iter;
+  GString *owned_name;
   guint8 endianness, type, flags, version;
-  guint64 key;
-  GVariant *value;
-  guint64 serial;
+  guint64 key, serial;
 
-  message = g_dbus_message_new ();
+  kmsg = g_new0 (GKDBusMessage, 1);
+  kmsg->message = g_dbus_message_new();
+  kmsg->sender_euid = (uid_t) -1;
+  kmsg->sender_egid = (gid_t) -1;
+  kmsg->sender_seclabel = NULL;
+  kmsg->sender_names = NULL;
 
   body_vectors = g_array_new (FALSE, FALSE, sizeof (GVariantVector));
 
   item = msg->items;
   body_size = 0;
+  owned_name = NULL;
 
   KDBUS_ITEM_FOREACH(item, msg, items)
     {
@@ -2691,16 +2772,44 @@ g_kdbus_decode_dbus_msg (GKDBusWorker      *worker,
             GUnixFDList *fd_list;
 
             fd_list = g_unix_fd_list_new_from_array (item->fds, data_size / sizeof (int));
-            g_dbus_message_set_unix_fd_list (message, fd_list);
+            g_dbus_message_set_unix_fd_list (kmsg->message, fd_list);
             g_object_unref (fd_list);
           }
           break;
 
-        /* All of the following items, like CMDLINE,
-           CGROUP, etc. need some GDBUS API extensions and
-           should be implemented in the future */
-        case KDBUS_ITEM_TIMESTAMP:
+        /* [libdbuspolicy] read euid and egid values */
         case KDBUS_ITEM_CREDS:
+
+          if ((uid_t) item->creds.euid != (uid_t) -1)
+            kmsg->sender_euid = (uid_t) item->creds.euid;
+
+          if ((gid_t) item->creds.egid != (gid_t) -1)
+            kmsg->sender_egid = (gid_t) item->creds.egid;
+
+          break;
+
+        /* [libdbuspolicy] read security label value */
+        case KDBUS_ITEM_SECLABEL:
+
+          if (item->str != NULL)
+            kmsg->sender_seclabel = g_strdup (item->str);
+
+          break;
+
+        /* [libdbuspolicy] read all owned well-known names */
+        case KDBUS_ITEM_OWNED_NAME:
+
+          if (g_dbus_is_name (item->name.name))
+            {
+              if (owned_name == NULL)
+                owned_name = g_string_new (item->name.name);
+              else
+                g_string_append_printf (owned_name, " %s", item->name.name);
+            }
+
+          break;
+
+        case KDBUS_ITEM_TIMESTAMP:
         case KDBUS_ITEM_PIDS:
         case KDBUS_ITEM_PID_COMM:
         case KDBUS_ITEM_TID_COMM:
@@ -2709,10 +2818,8 @@ g_kdbus_decode_dbus_msg (GKDBusWorker      *worker,
         case KDBUS_ITEM_CGROUP:
         case KDBUS_ITEM_AUDIT:
         case KDBUS_ITEM_CAPS:
-        case KDBUS_ITEM_SECLABEL:
         case KDBUS_ITEM_CONN_DESCRIPTION:
         case KDBUS_ITEM_AUXGROUPS:
-        case KDBUS_ITEM_OWNED_NAME:
         case KDBUS_ITEM_NAME:
         case KDBUS_ITEM_DST_ID:
         case KDBUS_ITEM_BLOOM_FILTER:
@@ -2746,36 +2853,40 @@ g_kdbus_decode_dbus_msg (GKDBusWorker      *worker,
       switch (key)
         {
           case G_DBUS_MESSAGE_HEADER_FIELD_REPLY_SERIAL:
-            g_dbus_message_set_reply_serial (message, (guint32) g_variant_get_uint64 (value));
+            g_dbus_message_set_reply_serial (kmsg->message, (guint32) g_variant_get_uint64 (value));
             continue;
 
           default:
-            g_dbus_message_set_header (message, key, value);
+            g_dbus_message_set_header (kmsg->message, key, value);
             continue;
         }
     }
 
   g_variant_iter_free (fields_iter);
 
-  g_dbus_message_set_flags (message, flags);
-  g_dbus_message_set_serial (message, serial);
-  g_dbus_message_set_message_type (message, type);
+  g_dbus_message_set_flags (kmsg->message, flags);
+  g_dbus_message_set_serial (kmsg->message, serial);
+  g_dbus_message_set_message_type (kmsg->message, type);
 
   body = g_variant_get_variant (parts[1]);
   if (!g_variant_is_of_type (body, G_VARIANT_TYPE ("()")))
-    g_dbus_message_set_body (message, body);
+    g_dbus_message_set_body (kmsg->message, body);
   else
-    g_dbus_message_set_body (message, NULL);
+    g_dbus_message_set_body (kmsg->message, NULL);
 
   g_variant_unref (body);
   g_variant_unref (parts[1]);
 
   /* set 'sender' field */
   sender = g_strdup_printf (":1.%"G_GUINT64_FORMAT, (guint64) msg->src_id);
-  g_dbus_message_set_sender (message, sender);
+  g_dbus_message_set_sender (kmsg->message, sender);
   g_free (sender);
 
-  return message;
+  /* owned name */
+  if (owned_name != NULL)
+    kmsg->sender_names = g_string_free (owned_name, FALSE);
+
+  return kmsg;
 }
 
 
@@ -2788,8 +2899,10 @@ _g_kdbus_receive (GKDBusWorker  *worker,
 {
   struct kdbus_cmd_recv recv;
   struct kdbus_msg *msg;
+  gboolean can_receive;
   gint ret;
 
+  can_receive = TRUE;
   memset (&recv, 0, sizeof recv);
   recv.size = sizeof (recv);
 
@@ -2818,12 +2931,56 @@ again:
 
    if (msg->payload_type == KDBUS_PAYLOAD_DBUS)
      {
-       GDBusMessage *message;
+       GKDBusMessage *kmsg;
 
-       message = g_kdbus_decode_dbus_msg (worker, msg);
-       (* worker->message_received_callback) (message, worker->user_data);
+       kmsg = g_kdbus_decode_dbus_msg (worker, msg);
 
-       g_object_unref (message);
+#ifdef LIBDBUSPOLICY
+       if ((kmsg->sender_euid != (uid_t) -1) && (kmsg->sender_egid != (gid_t) -1) &&
+           (kmsg->sender_seclabel != NULL) && (kmsg->sender_names != NULL))
+         {
+           if (dbuspolicy1_check_in (worker->dbuspolicy,
+                                     g_dbus_message_get_destination (kmsg->message),
+                                     g_dbus_message_get_sender (kmsg->message),
+                                     kmsg->sender_seclabel,
+                                     kmsg->sender_euid,
+                                     kmsg->sender_egid,
+                                     g_dbus_message_get_path (kmsg->message),
+                                     g_dbus_message_get_interface (kmsg->message),
+                                     g_dbus_message_get_member (kmsg->message),
+                                     g_dbus_message_get_message_type (kmsg->message),
+                                     g_dbus_message_get_error_name (kmsg->message),
+                                     (int) g_dbus_message_get_reply_serial (kmsg->message),
+                                     g_dbus_message_get_flags (kmsg->message) & G_DBUS_MESSAGE_FLAGS_NO_REPLY_EXPECTED) != 1)
+             {
+               can_receive = FALSE;
+             }
+         }
+       else
+         can_receive = FALSE;
+#endif
+
+       if (can_receive)
+         {
+           (* worker->message_received_callback) (kmsg->message, worker->user_data);
+         }
+       else
+         {
+           GDBusMessage *local_msg;
+
+           local_msg = g_kdbus_access_denied_reply (worker, g_dbus_message_get_reply_serial (kmsg->message));
+           (* worker->message_received_callback) (local_msg, worker->user_data);
+           g_object_unref (local_msg);
+         }
+
+       if (kmsg->sender_seclabel != NULL)
+         g_free (kmsg->sender_seclabel);
+
+       if (kmsg->sender_names != NULL)
+         g_free (kmsg->sender_names);
+
+       g_object_unref (kmsg->message);
+       g_free (kmsg);
      }
    else if (msg->payload_type == KDBUS_PAYLOAD_KERNEL)
      g_kdbus_decode_kernel_msg (worker, msg);
@@ -3210,6 +3367,28 @@ _g_kdbus_send (GKDBusWorker  *worker,
     }
 
   /*
+   * check policy
+   */
+#ifdef LIBDBUSPOLICY
+  if (dbuspolicy1_check_out (worker->dbuspolicy,
+                             g_dbus_message_get_destination (message),
+                             g_dbus_message_get_sender (message),
+                             g_dbus_message_get_path (message),
+                             g_dbus_message_get_interface (message),
+                             g_dbus_message_get_member (message),
+                             g_dbus_message_get_message_type (message),
+                             g_dbus_message_get_error_name (message),
+                             (int) g_dbus_message_get_reply_serial (message),
+                             g_dbus_message_get_flags (message) & G_DBUS_MESSAGE_FLAGS_NO_REPLY_EXPECTED) != 1)
+    {
+      g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED,
+                   "Cannot send message - message rejected due to security policies");
+      result = FALSE;
+      goto out;
+    }
+#endif
+
+  /*
    * send message
    */
   if (ioctl(worker->fd, KDBUS_CMD_SEND, send))
@@ -3254,12 +3433,58 @@ _g_kdbus_send (GKDBusWorker  *worker,
     }
   else if (out_reply != NULL)
     {
-      struct kdbus_msg *kmsg;
+      GKDBusMessage *kmsg;
+      struct kdbus_msg *kdbus_msg;
+      gboolean can_receive;
 
-      kmsg = (struct kdbus_msg *)((guint8 *)worker->kdbus_buffer + send->reply.offset);
+      kdbus_msg = (struct kdbus_msg *)((guint8 *)worker->kdbus_buffer + send->reply.offset);
+      can_receive = TRUE;
 
-      *out_reply = g_kdbus_decode_dbus_msg (worker, kmsg);
-      g_kdbus_close_msg (worker, kmsg);
+      kmsg = g_kdbus_decode_dbus_msg (worker, kdbus_msg);
+      g_kdbus_close_msg (worker, kdbus_msg);
+
+#ifdef LIBDBUSPOLICY
+      if ((kmsg->sender_euid != (uid_t) -1) && (kmsg->sender_egid != (gid_t) -1) &&
+          (kmsg->sender_seclabel != NULL) && (kmsg->sender_names != NULL))
+        {
+          if (dbuspolicy1_check_in (worker->dbuspolicy,
+                                    g_dbus_message_get_destination (kmsg->message),
+                                    g_dbus_message_get_sender (kmsg->message),
+                                    kmsg->sender_seclabel,
+                                    kmsg->sender_euid,
+                                    kmsg->sender_egid,
+                                    g_dbus_message_get_path (kmsg->message),
+                                    g_dbus_message_get_interface (kmsg->message),
+                                    g_dbus_message_get_member (kmsg->message),
+                                    g_dbus_message_get_message_type (kmsg->message),
+                                    g_dbus_message_get_error_name (kmsg->message),
+                                    (int) g_dbus_message_get_reply_serial (kmsg->message),
+                                    g_dbus_message_get_flags (kmsg->message) & G_DBUS_MESSAGE_FLAGS_NO_REPLY_EXPECTED) != 1)
+            {
+              can_receive = FALSE;
+            }
+        }
+      else
+       can_receive = FALSE;
+#endif
+
+       if (can_receive)
+         {
+           *out_reply = kmsg->message;
+         }
+       else
+         {
+           *out_reply = g_kdbus_access_denied_reply (worker, msg->cookie);
+           g_object_unref (kmsg->message);
+         }
+
+       if (kmsg->sender_seclabel != NULL)
+         g_free (kmsg->sender_seclabel);
+
+       if (kmsg->sender_names != NULL)
+         g_free (kmsg->sender_names);
+
+       g_free (kmsg);
 
       if (G_UNLIKELY (_g_dbus_debug_message ()))
         {
@@ -3274,6 +3499,8 @@ _g_kdbus_send (GKDBusWorker  *worker,
           _g_dbus_debug_print_unlock ();
         }
     }
+
+out:
 
   if (cancel_fd != -1)
     g_cancellable_release_fd (cancellable);
@@ -3318,6 +3545,11 @@ g_kdbus_worker_finalize (GObject *object)
     match_free (match->data);
   g_list_free (worker->matches);
 
+#ifdef LIBDBUSPOLICY
+  if (worker->dbuspolicy != NULL)
+    dbuspolicy1_free (worker->dbuspolicy);
+#endif
+
   if (worker->fd != -1 && !worker->closed)
     _g_kdbus_close (worker);
 
@@ -3351,6 +3583,10 @@ g_kdbus_worker_init (GKDBusWorker *worker)
   worker->bloom_size = 0;
   worker->bloom_n_hash = 0;
   worker->matches = NULL;
+
+#ifdef LIBDBUSPOLICY
+  worker->dbuspolicy = NULL;
+#endif
 }
 
 static gpointer

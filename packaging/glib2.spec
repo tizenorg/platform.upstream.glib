@@ -1,3 +1,5 @@
+%bcond_with kdbus
+%define release_flags %{?with_kdbus:+kdbus}
 %define baseline 2.40
 %define with_systemtap 0
 %define keepstatic 1
@@ -37,6 +39,10 @@ BuildRequires:  pkgconfig(libelf) >= 0.8.12
 BuildRequires:  pkgconfig(libffi)
 BuildRequires:  pkgconfig(libpcre)
 BuildRequires:  pkgconfig(zlib)
+# Enable support for libdbuspolicy (only for kdbus transport)
+%if %{with kdbus}
+BuildRequires:  pkgconfig(libdbuspolicy1)
+%endif
 
 %description
 GLib is a general-purpose utility library, which provides many useful
@@ -185,6 +191,9 @@ NOCONFIGURE=1 ./autogen.sh
     --enable-static \
 %if 0%{?with_systemtap}
     --enable-systemtap \
+%endif
+%if %{with kdbus}
+    --enable-libdbuspolicy \
 %endif
     --with-pcre=system
 
