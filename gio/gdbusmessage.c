@@ -47,6 +47,7 @@
 #include "gseekable.h"
 #include "gioerror.h"
 #include "gdbusprivate.h"
+#include "glib-private.h"
 
 #ifdef G_OS_UNIX
 #include "gunixfdlist.h"
@@ -1134,6 +1135,23 @@ g_dbus_message_set_body (GDBusMessage  *message,
       g_dbus_message_set_signature (message, signature);
       g_free (signature);
     }
+}
+
+/**
+ *
+ * < Tizen specific function not available in official GLib repository >
+ *
+ * Deserialise GVariant from @vectors (GVariantVector) - for kdbus purpose
+ *
+ */
+GVariant *
+g_dbus_message_get_body_from_vectors (void            *vectors,
+                                      gsize            n_vectors,
+                                      gsize            size)
+{
+  return GLIB_PRIVATE_CALL(g_variant_from_vectors) (G_VARIANT_TYPE ("((yyyyuta{tv})v)"),
+                                                    (GVariantVector *) vectors,
+                                                    n_vectors, size, FALSE);
 }
 
 /* ---------------------------------------------------------------------------------------------------- */

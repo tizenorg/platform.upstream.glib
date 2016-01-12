@@ -108,6 +108,10 @@ GLIB_AVAILABLE_IN_ALL
 void                      g_dbus_message_set_body           (GDBusMessage             *message,
                                                              GVariant                 *body);
 GLIB_AVAILABLE_IN_ALL
+GVariant                 *g_dbus_message_get_body_from_vectors  (void            *vectors,
+                                                                 gsize            n_vectors,
+                                                                 gsize            size);
+GLIB_AVAILABLE_IN_ALL
 GUnixFDList              *g_dbus_message_get_unix_fd_list   (GDBusMessage             *message);
 GLIB_AVAILABLE_IN_ALL
 void                      g_dbus_message_set_unix_fd_list   (GDBusMessage             *message,
