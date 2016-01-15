@@ -567,9 +567,6 @@ _g_kdbus_close (GKDBusWorker *worker)
   if (worker->closed)
     return TRUE;
 
-  g_source_destroy (worker->source);
-  worker->source = 0;
-
   g_main_context_invoke (worker->context, _g_kdbus_quit_loop, worker->loop);
 
   g_main_context_unref (worker->context);
@@ -3452,7 +3449,8 @@ _g_kdbus_worker_unfreeze (GKDBusWorker *worker)
 
   worker->source = g_unix_fd_source_new (worker->fd, G_IO_IN);
 
-  g_source_set_callback (worker->source, (GSourceFunc) g_kdbus_ready, worker, NULL);
+  g_source_set_callback (worker->source, (GSourceFunc) g_kdbus_ready,
+                         g_object_ref (worker), g_object_unref);
   name = g_strdup_printf ("kdbus worker");
   g_source_set_name (worker->source, name);
   g_free (name);
@@ -3513,6 +3511,9 @@ _g_kdbus_worker_flush_sync (GKDBusWorker *worker)
 void
 _g_kdbus_worker_stop (GKDBusWorker *worker)
 {
+  g_source_destroy (worker->source);
+  worker->source = 0;
+
   g_object_unref (worker);
 }
 
