@@ -41,7 +41,6 @@ BuildRequires:  pkgconfig(zlib)
 # Enable support for libdbuspolicy (only for kdbus transport)
 %if %{with dbuspolicy}
 BuildRequires:  pkgconfig(libdbuspolicy1)
-BuildRequires:  pkgconfig(cynara-client)
 %endif
 
 %description
