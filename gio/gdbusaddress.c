@@ -1530,9 +1530,8 @@ g_dbus_address_get_for_bus_sync (GBusType       bus_type,
     {
       guint n;
       _g_dbus_debug_print_lock ();
-      g_char *s = _g_dbus_enum_to_string (G_TYPE_BUS_TYPE, bus_type);
-      g_print ("GDBus-debug:Address: In g_dbus_address_get_for_bus_sync() for bus type '%s'\n", s);
-      g_free(s);
+      g_print ("GDBus-debug:Address: In g_dbus_address_get_for_bus_sync() for bus type '%s'\n",
+               _g_dbus_enum_to_string (G_TYPE_BUS_TYPE, bus_type));
       for (n = 0; n < 3; n++)
         {
           const gchar *k;
@@ -1622,16 +1621,15 @@ g_dbus_address_get_for_bus_sync (GBusType       bus_type,
       _g_dbus_debug_print_lock ();
       if (ret != NULL)
         {
-          g_char *s = _g_dbus_enum_to_string (G_TYPE_BUS_TYPE, bus_type);
-          g_print ("GDBus-debug:Address: Returning address '%s' for bus type '%s'\n", ret, s);
-	  g_free(s);
+          g_print ("GDBus-debug:Address: Returning address '%s' for bus type '%s'\n",
+                   ret,
+                   _g_dbus_enum_to_string (G_TYPE_BUS_TYPE, bus_type));
         }
       else
         {
-          g_char *s = _g_dbus_enum_to_string (G_TYPE_BUS_TYPE, bus_type);
-          g_print ("GDBus-debug:Address: Cannot look-up address bus type '%s': %s\n", s, 
+          g_print ("GDBus-debug:Address: Cannot look-up address bus type '%s': %s\n",
+                   _g_dbus_enum_to_string (G_TYPE_BUS_TYPE, bus_type),
                    local_error ? local_error->message : "");
-          g_free(s);
         }
       _g_dbus_debug_print_unlock ();
     }
