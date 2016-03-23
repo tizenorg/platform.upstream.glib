@@ -39,9 +39,9 @@ BuildRequires:  pkgconfig(libffi)
 BuildRequires:  pkgconfig(libpcre)
 BuildRequires:  pkgconfig(zlib)
 # Enable support for libdbuspolicy (only for kdbus transport)
-%if %{with dbuspolicy}
-BuildRequires:  pkgconfig(libdbuspolicy1)
-%endif
+#%if %{with dbuspolicy}
+#BuildRequires:  pkgconfig(libdbuspolicy1)
+#%endif
 
 %description
 GLib is a general-purpose utility library, which provides many useful
