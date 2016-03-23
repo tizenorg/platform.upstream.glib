@@ -191,10 +191,10 @@ NOCONFIGURE=1 ./autogen.sh
 %if 0%{?with_systemtap}
     --enable-systemtap \
 %endif
-%if %{with dbuspolicy}
-    --enable-libdbuspolicy \
-%endif
     --with-pcre=system
+#%if %{with dbuspolicy}
+#    --enable-libdbuspolicy \
+#%endif
 
 %{__make} %{?_smp_mflags} V=1
 
