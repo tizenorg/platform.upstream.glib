@@ -1620,7 +1620,7 @@ g_kdbus_bloom_add_data (GKDBusWorker  *worker,
   guint c = 0;
   guint64 p = 0;
 
-  bit_num = worker->bloom_size * 8;
+  bit_num = (guint64)worker->bloom_size * 8;
 
   if (bit_num > 1)
     bytes_num = ((__builtin_clzll(bit_num) ^ 63U) + 7) / 8;
@@ -1888,7 +1888,6 @@ _g_kdbus_RemoveMatch (GKDBusWorker  *worker,
                    G_DBUS_ERROR,
                    G_DBUS_ERROR_MATCH_RULE_INVALID,
                    "Invalid rule: %s", match_rule);
-      match_free (match);
       return FALSE;
     }
 
@@ -2769,7 +2768,7 @@ g_kdbus_decode_dbus_msg (GKDBusWorker      *worker,
         /* [libdbuspolicy] read security label value */
         case KDBUS_ITEM_SECLABEL:
 
-          if (item->str != NULL)
+          /*if (item->str != NULL)*/
             kmsg->sender_seclabel = g_strdup (item->str);
 
           break;
