@@ -1909,7 +1909,6 @@ _g_kdbus_RemoveMatch (GKDBusWorker  *worker,
                    G_DBUS_ERROR,
                    G_DBUS_ERROR_MATCH_RULE_NOT_FOUND,
                    "The given match rule wasn't found and can't be removed");
-      match_free (match);
       return FALSE;
     }
   else
