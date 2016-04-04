@@ -1569,8 +1569,10 @@ g_dbus_address_get_for_bus_sync (GBusType       bus_type,
       ret = g_strdup (g_getenv ("DBUS_SESSION_BUS_ADDRESS"));
       if (ret == NULL)
         {
-          ret = g_strdup_printf ("kernel:path=%s/kdbus;%s", g_get_user_runtime_dir (),
-                                  get_session_address_platform_specific (&local_error));
+          gchar *s;
+          s = get_session_address_platform_specific (&local_error);
+          ret = g_strdup_printf ("kernel:path=/sys/fs/kdbus/%d-user/bus;%s", getuid(), s);
+          g_free(s);
         }
       break;
 
