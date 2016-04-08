@@ -39,9 +39,9 @@ BuildRequires:  pkgconfig(libffi)
 BuildRequires:  pkgconfig(libpcre)
 BuildRequires:  pkgconfig(zlib)
 # Enable support for libdbuspolicy (only for kdbus transport)
-%if %{with dbuspolicy}
-BuildRequires:  pkgconfig(libdbuspolicy1)
-%endif
+#%if %{with dbuspolicy}
+#BuildRequires:  pkgconfig(libdbuspolicy1)
+#%endif
 
 %description
 GLib is a general-purpose utility library, which provides many useful
@@ -191,10 +191,10 @@ NOCONFIGURE=1 ./autogen.sh
 %if 0%{?with_systemtap}
     --enable-systemtap \
 %endif
-%if %{with dbuspolicy}
-    --enable-libdbuspolicy \
-%endif
     --with-pcre=system
+#%if %{with dbuspolicy}
+#    --enable-libdbuspolicy \
+#%endif
 
 %{__make} %{?_smp_mflags} V=1
 
