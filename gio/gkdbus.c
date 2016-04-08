@@ -2918,7 +2918,7 @@ again:
         if (g_dbus_message_get_message_type (kmsg->message) == G_DBUS_MESSAGE_TYPE_METHOD_CALL)
           {
             if ((kmsg->sender_euid != (uid_t) -1) && (kmsg->sender_egid != (gid_t) -1) &&
-                (kmsg->sender_seclabel != NULL) && (kmsg->sender_names != NULL))
+                (kmsg->sender_seclabel != NULL))
               {
                 gint check;
 
