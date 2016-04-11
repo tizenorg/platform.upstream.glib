@@ -3348,22 +3348,25 @@ _g_kdbus_send (GKDBusWorker  *worker,
 #ifdef LIBDBUSPOLICY
   if (worker->dbuspolicy != NULL)
     {
-      gint check;
-
-      check = dbuspolicy1_check_out (worker->dbuspolicy,
-                                     g_dbus_message_get_destination (message),
-                                     g_dbus_message_get_sender (message),
-                                     g_dbus_message_get_path (message),
-                                     g_dbus_message_get_interface (message),
-                                     g_dbus_message_get_member (message),
-                                     g_dbus_message_get_message_type (message),
-                                     NULL, 0, 0);
-      if (check != 1)
+      if (g_dbus_message_get_message_type (message) == G_DBUS_MESSAGE_TYPE_METHOD_CALL)
         {
-          g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED,
-                       "Cannot send message - message rejected due to security policies");
-          result = FALSE;
-          goto out;
+          gint check;
+
+          check = dbuspolicy1_check_out (worker->dbuspolicy,
+                                         g_dbus_message_get_destination (message),
+                                         g_dbus_message_get_sender (message),
+                                         g_dbus_message_get_path (message),
+                                         g_dbus_message_get_interface (message),
+                                         g_dbus_message_get_member (message),
+                                         g_dbus_message_get_message_type (message),
+                                         NULL, 0, 0);
+          if (check != 1)
+            {
+              g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED,
+                           "Cannot send message - message rejected due to security policies");
+              result = FALSE;
+              goto out;
+            }
         }
     }
 #endif
