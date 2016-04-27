@@ -554,40 +554,18 @@ _g_kdbus_open (GKDBusWorker  *worker,
     }
 
 #ifdef LIBDBUSPOLICY
-  {
-    gint bus_type;
+  worker->dbuspolicy = dbuspolicy1_init (address);
+  if (worker->dbuspolicy == NULL)
+    {
+      g_warning ("kdbus: cannot load dbus policy for kdbus transport");
+      close (worker->fd);
+      worker->fd = -1;
 
-    bus_type = -1;
-
-    if (g_str_has_prefix (address, "/sys/fs/kdbus/"))
-      {
-        if (g_str_has_suffix (address, "-system/bus"))
-          bus_type = SYSTEM_BUS;
-        else if (g_str_has_suffix (address, "-user/bus"))
-          bus_type = SESSION_BUS;
-      }
-
-    if ((bus_type == SYSTEM_BUS) || (bus_type == SESSION_BUS))
-      {
-        worker->dbuspolicy = dbuspolicy1_init (bus_type);
-        if (worker->dbuspolicy == NULL)
-          {
-            g_warning ("kdbus: cannot load dbus policy for kdbus transport");
-            close (worker->fd);
-            worker->fd = -1;
-
-            return FALSE;
-          }
-      }
-    else
-      {
-        g_warning ("kdbus: cannot load dbus policy for custom bus");
-      }
-  }
+      return FALSE;
+    }
 #endif
 
   worker->closed = FALSE;
-
   return TRUE;
 }
 
