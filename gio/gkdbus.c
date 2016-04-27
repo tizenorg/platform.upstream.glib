@@ -35,6 +35,7 @@
 #include <sys/ioctl.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #ifdef HAVE_SYS_FILIO_H
 # include <sys/filio.h>
@@ -555,17 +556,22 @@ _g_kdbus_open (GKDBusWorker  *worker,
 
 #ifdef LIBDBUSPOLICY
   {
+    gchar *real_path;
     gint bus_type;
 
+    real_path = realpath (address, NULL);
     bus_type = -1;
 
-    if (g_str_has_prefix (address, "/sys/fs/kdbus/"))
+    if (g_str_has_prefix (real_path, "/sys/fs/kdbus/"))
       {
-        if (g_str_has_suffix (address, "-system/bus"))
+        if (g_str_has_suffix (real_path, "-system/bus"))
           bus_type = SYSTEM_BUS;
-        else if (g_str_has_suffix (address, "-user/bus"))
+        else if (g_str_has_suffix (real_path, "-user/bus"))
           bus_type = SESSION_BUS;
       }
+
+    if (real_path != NULL)
+      g_free (real_path);
 
     if ((bus_type == SYSTEM_BUS) || (bus_type == SESSION_BUS))
       {
