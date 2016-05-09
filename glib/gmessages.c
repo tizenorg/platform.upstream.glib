@@ -139,7 +139,8 @@
  * @G_LOG_FLAG_FATAL: internal flag
  * @G_LOG_LEVEL_ERROR: log level for errors, see g_error().
  *     This level is also used for messages produced by g_assert().
- * @G_LOG_LEVEL_CRITICAL: log level for critical messages, see g_critical().
+ * @G_LOG_LEVEL_CRITICAL: log level for critical warning messages, see
+ *     g_critical().
  *     This level is also used for messages produced by g_return_if_fail()
  *     and g_return_val_if_fail().
  * @G_LOG_LEVEL_WARNING: log level for warnings, see g_warning()
@@ -180,6 +181,10 @@
  *
  * A convenience function/macro to log a warning message.
  *
+ * This is not intended for end user error reporting. Use of #GError is
+ * preferred for that instead, as it allows calling functions to perform actions
+ * conditional on the type of error.
+ *
  * You can make warnings fatal at runtime by setting the `G_DEBUG`
  * environment variable (see
  * [Running GLib Applications](glib-running.html)).
@@ -216,6 +221,10 @@
  *     into the format string (as with printf())
  *
  * A convenience function/macro to log an error message.
+ *
+ * This is not intended for end user error reporting. Use of #GError is
+ * preferred for that instead, as it allows calling functions to perform actions
+ * conditional on the type of error.
  *
  * Error messages are always fatal, resulting in a call to
  * abort() to terminate the application. This function will
@@ -352,13 +361,10 @@ dowrite (int          fd,
 #endif
 
 static void
-write_string (int          fd,
+write_string (FILE        *stream,
 	      const gchar *string)
 {
-  int res;
-  do 
-    res = write (fd, string, strlen (string));
-  while (G_UNLIKELY (res == -1 && errno == EINTR));
+  fputs (string, stream);
 }
 
 static GLogDomain*
@@ -873,7 +879,7 @@ format_unsigned (gchar  *buf,
 /* these are filtered by G_MESSAGES_DEBUG by the default log handler */
 #define INFO_LEVELS (G_LOG_LEVEL_INFO | G_LOG_LEVEL_DEBUG)
 
-static int
+static FILE *
 mklevel_prefix (gchar          level_prefix[STRING_BUFFER_SIZE],
 		GLogLevelFlags log_level)
 {
@@ -924,7 +930,7 @@ mklevel_prefix (gchar          level_prefix[STRING_BUFFER_SIZE],
   if ((log_level & G_LOG_FLAG_FATAL) != 0 && !g_test_initialized ())
     win32_keep_fatal_message = TRUE;
 #endif
-  return to_stdout ? 1 : 2;
+  return to_stdout ? stdout : stderr;
 }
 
 typedef struct {
@@ -937,7 +943,8 @@ static GSList *expected_messages = NULL;
 
 /**
  * g_logv:
- * @log_domain: the log domain
+ * @log_domain: (nullable): the log domain, or %NULL for the default ""
+ * application domain
  * @log_level: the log level
  * @format: the message format. See the printf() documentation
  * @args: the parameters to insert into the format string
@@ -1084,7 +1091,8 @@ g_logv (const gchar   *log_domain,
 
 /**
  * g_log:
- * @log_domain: the log domain, usually #G_LOG_DOMAIN
+ * @log_domain: (nullable): the log domain, usually #G_LOG_DOMAIN, or %NULL
+ * for the default
  * @log_level: the log level, either from #GLogLevelFlags
  *     or a user-defined level
  * @format: the message format. See the printf() documentation
@@ -1112,6 +1120,12 @@ g_log (const gchar   *log_domain,
   va_end (args);
 }
 
+/**
+ * g_return_if_fail_warning: (skip)
+ * @log_domain: (nullable):
+ * @pretty_function:
+ * @expression: (nullable):
+ */
 void
 g_return_if_fail_warning (const char *log_domain,
 			  const char *pretty_function,
@@ -1124,6 +1138,14 @@ g_return_if_fail_warning (const char *log_domain,
 	 expression);
 }
 
+/**
+ * g_warn_message: (skip)
+ * @domain: (nullable):
+ * @file:
+ * @line:
+ * @func:
+ * @warnexpr: (nullable):
+ */
 void
 g_warn_message (const char     *domain,
                 const char     *file,
@@ -1274,7 +1296,7 @@ _g_log_fallback_handler (const gchar   *log_domain,
 #ifndef G_OS_WIN32
   gchar pid_string[FORMAT_UNSIGNED_BUFSIZE];
 #endif
-  int fd;
+  FILE *stream;
 
   /* we cannot call _any_ GLib functions in this fallback handler,
    * which is why we skip UTF-8 conversion, etc.
@@ -1283,7 +1305,7 @@ _g_log_fallback_handler (const gchar   *log_domain,
    * the process ID unconditionally however.
    */
 
-  fd = mklevel_prefix (level_prefix, log_level);
+  stream = mklevel_prefix (level_prefix, log_level);
   if (!message)
     message = "(NULL) message";
 
@@ -1292,24 +1314,24 @@ _g_log_fallback_handler (const gchar   *log_domain,
 #endif
 
   if (log_domain)
-    write_string (fd, "\n");
+    write_string (stream, "\n");
   else
-    write_string (fd, "\n** ");
+    write_string (stream, "\n** ");
 
 #ifndef G_OS_WIN32
-  write_string (fd, "(process:");
-  write_string (fd, pid_string);
-  write_string (fd, "): ");
+  write_string (stream, "(process:");
+  write_string (stream, pid_string);
+  write_string (stream, "): ");
 #endif
 
   if (log_domain)
     {
-      write_string (fd, log_domain);
-      write_string (fd, "-");
+      write_string (stream, log_domain);
+      write_string (stream, "-");
     }
-  write_string (fd, level_prefix);
-  write_string (fd, ": ");
-  write_string (fd, message);
+  write_string (stream, level_prefix);
+  write_string (stream, ": ");
+  write_string (stream, message);
 }
 
 static void
@@ -1374,10 +1396,11 @@ escape_string (GString *string)
 
 /**
  * g_log_default_handler:
- * @log_domain: the log domain of the message
+ * @log_domain: (nullable): the log domain of the message, or %NULL for the
+ * default "" application domain
  * @log_level: the level of the message
- * @message: the message
- * @unused_data: data passed from g_log() which is unused
+ * @message: (nullable): the message
+ * @unused_data: (nullable): data passed from g_log() which is unused
  *
  * The default log handler set up by GLib; g_log_set_default_handler()
  * allows to install an alternate default log handler.
@@ -1410,7 +1433,7 @@ g_log_default_handler (const gchar   *log_domain,
 {
   gchar level_prefix[STRING_BUFFER_SIZE], *string;
   GString *gstring;
-  int fd;
+  FILE *stream;
   const gchar *domains;
 
   if ((log_level & DEFAULT_LEVELS) || (log_level >> G_LOG_LEVEL_USER_SHIFT))
@@ -1430,7 +1453,7 @@ g_log_default_handler (const gchar   *log_domain,
       return;
     }
 
-  fd = mklevel_prefix (level_prefix, log_level);
+  stream = mklevel_prefix (level_prefix, log_level);
 
   gstring = g_string_new (NULL);
   if (log_level & ALERT_LEVELS)
@@ -1481,7 +1504,7 @@ g_log_default_handler (const gchar   *log_domain,
 
   string = g_string_free (gstring, FALSE);
 
-  write_string (fd, string);
+  write_string (stream, string);
   g_free (string);
 }
 

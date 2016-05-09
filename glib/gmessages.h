@@ -33,12 +33,6 @@
 #include <glib/gtypes.h>
 #include <glib/gmacros.h>
 
-/* Suppress warnings when GCC is in -pedantic mode and not -std=c99
- */
-#if (__GNUC__ >= 3 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 96))
-#pragma GCC system_header
-#endif
-
 G_BEGIN_DECLS
 
 /* calculate a string size, guaranteed to fit format + args.
@@ -281,7 +275,7 @@ GPrintFunc      g_set_printerr_handler  (GPrintFunc      func);
 /**
  * g_warn_if_reached:
  *
- * Logs a critical warning.
+ * Logs a warning.
  *
  * Since: 2.16
  */

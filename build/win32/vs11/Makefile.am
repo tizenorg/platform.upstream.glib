@@ -30,6 +30,7 @@ EXTRA_DIST = \
 	gdbus.vcxproj \
 	gdbus.vcxproj.filters \
 	glib-install.vcxproj	\
+	glib-install.vcxproj.filters	\
 	glib-build-defines.props	\
 	glib-install.props	\
 	glib-version-paths.props	\
@@ -37,10 +38,8 @@ EXTRA_DIST = \
 
 DISTCLEANFILES = $(EXTRA_DIST)
 
-MSVC_SLN = glib
-
 MSVC_VER = 11
-
+MSVC_FORMAT_VER = 12
 MSVC_VER_LONG = 2012
 
 include $(top_srcdir)/build/Makefile-newvs.am

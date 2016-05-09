@@ -1938,7 +1938,7 @@ g_date_compare (const GDate *lhs,
 /**
  * g_date_to_struct_tm:
  * @date: a #GDate to set the struct tm from
- * @tm: struct tm to fill
+ * @tm: (not nullable): struct tm to fill
  *
  * Fills in the date-related bits of a struct tm using the @date value.
  * Initializes the non-date parts with something sane but meaningless.
@@ -2439,6 +2439,9 @@ win32_strftime_helper (const GDate     *d,
  *
  * Returns: number of characters written to the buffer, or 0 the buffer was too small
  */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+
 gsize     
 g_date_strftime (gchar       *s, 
                  gsize        slen, 
@@ -2549,3 +2552,5 @@ g_date_strftime (gchar       *s,
   return retval;
 #endif
 }
+
+#pragma GCC diagnostic pop

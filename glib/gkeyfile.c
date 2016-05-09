@@ -970,6 +970,7 @@ g_key_file_load_from_dirs (GKeyFile       *key_file,
   while (*data_dirs != NULL && !found_file)
     {
       g_free (output_path);
+      output_path = NULL;
 
       fd = find_file_in_data_dirs (file, data_dirs, &output_path,
                                    &key_file_error);
@@ -1546,7 +1547,7 @@ g_key_file_get_keys (GKeyFile     *key_file,
       g_set_error (error, G_KEY_FILE_ERROR,
                    G_KEY_FILE_ERROR_GROUP_NOT_FOUND,
                    _("Key file does not have group '%s'"),
-                   group_name ? group_name : "(null)");
+                   group_name);
       return NULL;
     }
 
@@ -1719,7 +1720,7 @@ g_key_file_get_value (GKeyFile     *key_file,
       g_set_error (error, G_KEY_FILE_ERROR,
                    G_KEY_FILE_ERROR_GROUP_NOT_FOUND,
                    _("Key file does not have group '%s'"),
-                   group_name ? group_name : "(null)");
+                   group_name);
       return NULL;
     }
 
@@ -3564,7 +3565,7 @@ g_key_file_has_key_full (GKeyFile     *key_file,
       g_set_error (error, G_KEY_FILE_ERROR,
                    G_KEY_FILE_ERROR_GROUP_NOT_FOUND,
                    _("Key file does not have group '%s'"),
-                   group_name ? group_name : "(null)");
+                   group_name);
 
       return FALSE;
     }
@@ -3860,7 +3861,7 @@ g_key_file_remove_key (GKeyFile     *key_file,
       g_set_error (error, G_KEY_FILE_ERROR,
                    G_KEY_FILE_ERROR_GROUP_NOT_FOUND,
                    _("Key file does not have group '%s'"),
-                   group_name ? group_name : "(null)");
+                   group_name);
       return FALSE;
     }
 
@@ -4319,16 +4320,29 @@ g_key_file_parse_value_as_double  (GKeyFile     *key_file,
   return double_value;
 }
 
+static gint
+strcmp_sized (const gchar *s1, size_t len1, const gchar *s2)
+{
+  size_t len2 = strlen (s2);
+  return strncmp (s1, s2, MAX (len1, len2));
+}
+
 static gboolean
 g_key_file_parse_value_as_boolean (GKeyFile     *key_file,
 				   const gchar  *value,
 				   GError      **error)
 {
   gchar *value_utf8;
+  gint i, length = 0;
 
-  if (strcmp (value, "true") == 0 || strcmp (value, "1") == 0)
+  /* Count the number of non-whitespace characters */
+  for (i = 0; value[i]; i++)
+    if (!g_ascii_isspace (value[i]))
+      length = i + 1;
+
+  if (strcmp_sized (value, length, "true") == 0 || strcmp_sized (value, length, "1") == 0)
     return TRUE;
-  else if (strcmp (value, "false") == 0 || strcmp (value, "0") == 0)
+  else if (strcmp_sized (value, length, "false") == 0 || strcmp_sized (value, length, "0") == 0)
     return FALSE;
 
   value_utf8 = _g_utf8_make_valid (value);

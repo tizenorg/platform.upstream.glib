@@ -192,7 +192,8 @@ g_free (gpointer mem)
 
 /**
  * g_clear_pointer: (skip)
- * @pp: a pointer to a variable, struct member etc. holding a pointer
+ * @pp: (not nullable): a pointer to a variable, struct member etc. holding a
+ *    pointer
  * @destroy: a function to which a gpointer can be passed, to destroy *@pp
  *
  * Clears a reference to a variable.
@@ -485,6 +486,9 @@ g_mem_set_vtable (GMemVTable *vtable)
 
 /**
  * glib_mem_profiler_table:
+ *
+ * Used to be a #GMemVTable containing profiling variants of the memory
+ * allocation functions, but this variable shouldn't be modified anymore.
  *
  * Deprecated: 2.46: Use other memory profiling tools instead
  */
