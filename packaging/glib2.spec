@@ -1,10 +1,10 @@
 %bcond_with dbuspolicy
-%define baseline 2.40
+%define baseline 2.48
 %define with_systemtap 0
 %define keepstatic 1
 
 Name:           glib2
-Version:        2.44.1
+Version:        2.48.0
 Release:        0
 # FIXME: find out if tapsets should really be in devel package or in main package
 Summary:        General-Purpose Utility Library
@@ -332,6 +332,8 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %{_datadir}/aclocal/glib-2.0.m4
 %{_datadir}/aclocal/glib-gettext.m4
 %{_datadir}/aclocal/gsettings.m4
+%dir %{_datadir}/gettext/its/
+%{_datadir}/gettext/its/gschema*
 %dir %{_datadir}/glib-2.0/
 %{_datadir}/glib-2.0/gdb/
 %{_datadir}/glib-2.0/gettext/

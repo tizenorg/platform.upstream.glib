@@ -14,15 +14,14 @@
 #include "config.h"
 
 #include <glib/gvariant-internal.h>
-#include <glib/glib-private.h>
 #include <string.h>
 #include <stdlib.h>
 #include <glib.h>
 
-#define BASIC "bynqiuxthfdsog?"
+#define BASIC "bynqiuxthdsog?"
 #define N_BASIC (G_N_ELEMENTS (BASIC) - 1)
 
-#define INVALIDS "cejklpwz&@^$"
+#define INVALIDS "cefjklpwz&@^$"
 #define N_INVALIDS (G_N_ELEMENTS (INVALIDS) - 1)
 
 /* see comment in gvariant-serialiser.c about this madness.
@@ -82,8 +81,6 @@ append_type_string (GString  *string,
           return g_variant_type_copy (G_VARIANT_TYPE_UINT64);
         case 'h':
           return g_variant_type_copy (G_VARIANT_TYPE_HANDLE);
-        case 'f':
-          return g_variant_type_copy (G_VARIANT_TYPE_FLOAT);
         case 'd':
           return g_variant_type_copy (G_VARIANT_TYPE_DOUBLE);
         case 's':
@@ -453,8 +450,6 @@ describe_type (const GVariantType *type)
             result = g_strdup ("t");
           else if (g_variant_type_equal (type, G_VARIANT_TYPE_HANDLE))
             result = g_strdup ("h");
-          else if (g_variant_type_equal (type, G_VARIANT_TYPE_FLOAT))
-            result = g_strdup ("f");
           else if (g_variant_type_equal (type, G_VARIANT_TYPE_DOUBLE))
             result = g_strdup ("d");
           else if (g_variant_type_equal (type, G_VARIANT_TYPE_STRING))
@@ -758,7 +753,6 @@ calculate_type_info (const GVariantType *type,
 
       else if (g_variant_type_equal (type, G_VARIANT_TYPE_INT32) ||
                g_variant_type_equal (type, G_VARIANT_TYPE_UINT32) ||
-               g_variant_type_equal (type, G_VARIANT_TYPE_FLOAT) ||
                g_variant_type_equal (type, G_VARIANT_TYPE_HANDLE))
         {
           al = fs = 4;
@@ -1890,7 +1884,6 @@ struct _TreeInstance
 
   union {
     guint64 integer;
-    gfloat single;
     gdouble floating;
     gchar string[200];
   } data;
@@ -2003,11 +1996,6 @@ tree_instance_new (const GVariantType *type,
       instance->data.integer <<= 32;
       instance->data.integer |= (guint32) g_test_rand_int ();
       instance->data_size = 8;
-      break;
-
-    case 'f':
-      instance->data.single = g_test_rand_double ();
-      instance->data_size = 4;
       break;
 
     case 'd':
@@ -2447,10 +2435,6 @@ tree_instance_get_gvariant (TreeInstance *tree)
       result = g_variant_new_handle (tree->data.integer);
       break;
 
-    case 'f':
-      result = g_variant_new_float (tree->data.single);
-      break;
-
     case 'd':
       result = g_variant_new_double (tree->data.floating);
       break;
@@ -2472,19 +2456,6 @@ tree_instance_get_gvariant (TreeInstance *tree)
     }
 
   return result;
-}
-
-static GVariant *
-create_random_gvariant (guint depth)
-{
-  TreeInstance *tree;
-  GVariant *value;
-
-  tree = tree_instance_new (NULL, depth);
-  value = g_variant_take_ref (tree_instance_get_gvariant (tree));
-  tree_instance_free (tree);
-
-  return value;
 }
 
 static gboolean
@@ -2590,13 +2561,6 @@ tree_instance_check_gvariant (TreeInstance *tree,
 
     case 'h':
       return g_variant_get_handle (value) == (gint32) tree->data.integer;
-
-    case 'f':
-      {
-        gfloat floating = g_variant_get_float (value);
-
-        return memcmp (&floating, &tree->data.single, sizeof floating) == 0;
-      }
 
     case 'd':
       {
@@ -3685,7 +3649,6 @@ test_gv_byteswap (void)
 static void
 test_parser (void)
 {
-  GError *error = NULL;
   TreeInstance *tree;
   GVariant *parsed;
   GVariant *value;
@@ -3699,19 +3662,16 @@ test_parser (void)
   pt = g_variant_print (value, TRUE);
   p = g_variant_print (value, FALSE);
 
-  parsed = g_variant_parse (NULL, pt, NULL, NULL, &error);
-  g_assert_no_error (error);
+  parsed = g_variant_parse (NULL, pt, NULL, NULL, NULL);
   res = g_variant_print (parsed, FALSE);
-  if (!strstr (pt, "float")) /* FIXME: need reliable round-trip for floats */
-    g_assert_cmpstr (p, ==, res);
+  g_assert_cmpstr (p, ==, res);
   g_variant_unref (parsed);
   g_free (res);
 
-  parsed = g_variant_parse (g_variant_get_type (value), p, NULL, NULL, &error);
-  g_assert_no_error (error);
+  parsed = g_variant_parse (g_variant_get_type (value), p,
+                            NULL, NULL, NULL);
   res = g_variant_print (parsed, TRUE);
-  if (!strstr (pt, "float")) /* FIXME: need reliable round-trip for floats */
-    g_assert_cmpstr (pt, ==, res);
+  g_assert_cmpstr (pt, ==, res);
   g_variant_unref (parsed);
   g_free (res);
 
@@ -4496,13 +4456,10 @@ test_gbytes (void)
 {
   GVariant *a;
   GVariant *tuple;
-  GVariant *b;
-  GVariant *c;
   GBytes *bytes;
   GBytes *bytes2;
   const guint8 values[5] = { 1, 2, 3, 4, 5 };
   const guint8 *elts;
-  gchar *tmp;
   gsize n_elts;
   gint i;
 
@@ -4533,41 +4490,6 @@ test_gbytes (void)
   g_bytes_unref (bytes2);
   g_variant_unref (a);
   g_variant_unref (tuple);
-
-  /* Feed in some non-normal data... make sure it's aligned.
-   *
-   * Here we have an array of three elements.  The first and last are
-   * normal ints ('iiii') and array-of-bytes data ('ayay').  The middle
-   * element is zero-bytes wide, which will present a problem when
-   * fetching the fixed-size integer out of it.
-   * */
-  tmp = g_strdup ("iiiiayayiiiisayay\x08\x08\x10");
-  bytes = g_bytes_new_take (tmp, strlen (tmp));
-  a = g_variant_new_from_bytes (G_VARIANT_TYPE ("a(iay)"), bytes, FALSE);
-  g_bytes_unref (bytes);
-
-  /* The middle tuple is zero bytes */
-  b = g_variant_get_child_value (a, 1);
-  g_assert_cmpint (g_variant_get_size (b), ==, 0);
-
-  /* But we're going to pull a 4-byte child out of it... */
-  c = g_variant_get_child_value (b, 0);
-  g_assert_cmpint (g_variant_get_size (c), ==, 4);
-
-  /* g_variant_get_data() is allowed to fail in this case.
-   * NB: if someone finds a way to avoid this then that's fine too...
-   */
-  g_assert (g_variant_get_data (c) == NULL);
-
-  /* but since it's four bytes, it ought to have data... */
-  bytes = g_variant_get_data_as_bytes (c);
-  g_assert_cmpint (g_bytes_get_size (bytes), ==, 4);
-  g_assert (memcmp (g_bytes_get_data (bytes, NULL), "\0\0\0\0", 4) == 0);
-  g_bytes_unref (bytes);
-
-  g_variant_unref (c);
-  g_variant_unref (b);
-  g_variant_unref (a);
 }
 
 typedef struct {
@@ -4609,81 +4531,6 @@ test_error_quark (void)
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   g_assert (g_variant_parser_get_error_quark () == g_variant_parse_error_quark ());
 G_GNUC_END_IGNORE_DEPRECATIONS
-}
-
-static GByteArray *
-flatten_vectors (GVariantVectors *v)
-{
-  GByteArray *result;
-  guint i;
-
-  result = g_byte_array_new ();
-
-  for (i = 0; i < v->vectors->len; i++)
-    {
-      GVariantVector vec = g_array_index (v->vectors, GVariantVector, i);
-
-      if (vec.gbytes)
-        g_byte_array_append (result, vec.data.pointer, vec.size);
-      else
-        g_byte_array_append (result, v->extra_bytes->data + vec.data.offset, vec.size);
-    }
-
-  return result;
-}
-
-static void
-test_vector_serialiser (void)
-{
-  GVariantVectors vectors;
-  GByteArray *flattened;
-  GVariant *value;
-  guint i;
-
-  for (i = 0; i < 100; i++)
-    {
-      guint j;
-
-      value = create_random_gvariant (2);
-      //g_print (">>> %s\n", g_variant_print (value, TRUE));
-
-      GLIB_PRIVATE_CALL(g_variant_to_vectors) (value, &vectors);
-      for (j = 0; j < vectors.vectors->len; j++)
-        {
-          GVariantVector *v = &g_array_index (vectors.vectors, GVariantVector, j);
-
-          if (!v->gbytes)
-            {
-              v->gbytes = g_bytes_new (NULL, 0);
-              v->data.pointer = v->data.offset + vectors.extra_bytes->data;
-            }
-
-          //g_print ("  V %p %p %d\n", v, v->data.pointer, (guint) v->size);
-        }
-      GLIB_PRIVATE_CALL(g_variant_from_vectors) (g_variant_get_type (value), (GVariantVector *) vectors.vectors->data, vectors.vectors->len, g_variant_get_size (value), TRUE);
-      continue;
-      flattened = flatten_vectors (&vectors);
-      g_byte_array_free (vectors.extra_bytes, TRUE);
-      g_byte_array_free (vectors.offsets, TRUE);
-      g_array_free (vectors.vectors, TRUE);
-
-#if 0
-      if (flattened->len != g_variant_get_size (value) ||
-          memcmp (flattened->data, g_variant_get_data (value), flattened->len) != 0)
-        {
-          g_file_set_contents ("flattened", flattened->data, flattened->len, NULL);
-          g_file_set_contents ("serialised", g_variant_get_data (value), g_variant_get_size (value), NULL);
-          g_print ("type is %s\n", g_variant_get_type_string (value));
-          g_assert_not_reached ();
-        }
-#endif
-
-      g_assert_cmpint (flattened->len, ==, g_variant_get_size (value));
-      g_assert (memcmp (flattened->data, g_variant_get_data (value), flattened->len) == 0);
-
-      g_byte_array_free (flattened, TRUE);
-      g_variant_unref (value);
-    }
 }
 
 int
@@ -4744,7 +4591,6 @@ main (int argc, char **argv)
   g_test_add_func ("/gvariant/gbytes", test_gbytes);
   g_test_add_func ("/gvariant/print-context", test_print_context);
   g_test_add_func ("/gvariant/error-quark", test_error_quark);
-  g_test_add_func ("/gvariant/vector-serialiser", test_vector_serialiser);
 
   return g_test_run ();
 }

@@ -215,10 +215,6 @@ platform_libadd =
 platform_deps =
 appinfo_sources =
 
-if LIBDBUSPOLICY
-platform_libadd += $(LIBDBUSPOLICY1_LIBS)
-endif
-
 if HAVE_INOTIFY
 SUBDIRS += inotify
 platform_libadd += inotify/libinotify.la
@@ -249,10 +245,6 @@ platform_libadd += xdgmime/libxdgmime.la
 platform_deps += xdgmime/libxdgmime.la
 unix_sources = \
 	gfiledescriptorbased.c  \
-	gkdbus.c		\
-	gkdbus.h		\
-	gkdbusfakedaemon.c	\
-	gkdbusfakedaemon.h	\
 	gunixconnection.c	\
 	gunixcredentialsmessage.c	\
 	gunixfdlist.c		\
@@ -540,10 +532,6 @@ if OS_COCOA
 # This is dumb.  The ObjC source file should be properly named .m
 libgio_2_0_la_CFLAGS += -xobjective-c
 libgio_2_0_la_LDFLAGS += -Wl,-framework,Foundation -Wl,-framework,AppKit
-endif
-
-if LIBDBUSPOLICY
-libgio_2_0_la_CPPFLAGS += $(LIBDBUSPOLICY1_CFLAGS)
 endif
 
 libgio_2_0_la_DEPENDENCIES = $(gio_win32_res) $(gio_def) $(platform_deps)

@@ -114,9 +114,6 @@ guint    g_unix_fd_add             (gint              fd,
                                     GUnixFDSourceFunc function,
                                     gpointer          user_data);
 
-GLIB_AVAILABLE_IN_2_44
-gboolean g_unix_fd_ensure_zero_copy_safe (gint fd);
-
 G_END_DECLS
 
 #endif  /* __G_UNIX_H__ */

@@ -1058,8 +1058,6 @@ g_set_printerr_handler
 <SUBSECTION>
 g_return_if_fail
 g_return_val_if_fail
-g_return_if_fail_se
-g_return_val_if_fail_se
 g_return_if_reached
 g_return_val_if_reached
 g_warn_if_fail
@@ -2133,7 +2131,6 @@ GUnixFDSourceFunc
 g_unix_fd_add
 g_unix_fd_add_full
 g_unix_fd_source_new
-g_unix_fd_ensure_zero_copy_safe
 
 <SUBSECTION Private>
 g_unix_error_quark
@@ -2573,13 +2570,11 @@ g_byte_array_free_to_bytes
 GBytes
 g_bytes_new
 g_bytes_new_take
-g_bytes_new_take_zero_copy_fd
 g_bytes_new_static
 g_bytes_new_with_free_func
 g_bytes_new_from_bytes
 g_bytes_get_data
 g_bytes_get_size
-g_bytes_get_zero_copy_fd
 g_bytes_hash
 g_bytes_equal
 g_bytes_compare
@@ -3081,7 +3076,6 @@ g_test_rand_double
 g_test_rand_double_range
 
 g_assert
-g_assert_se
 g_assert_not_reached
 
 g_assert_cmpstr

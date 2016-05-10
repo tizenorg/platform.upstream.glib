@@ -112,7 +112,7 @@
  * endianness, or of the length or type of the top-level variant.
  *
  * The amount of memory required to store a boolean is 1 byte. 16,
- * 32 and 64 bit integers and floating point numbers
+ * 32 and 64 bit integers and double precision floating point numbers
  * use their "natural" size.  Strings (including object path and
  * signature strings) are stored with a nul terminator, and as such
  * use the length of the string plus 1 byte.
@@ -288,10 +288,14 @@ g_variant_new_from_trusted (const GVariantType *type,
                             gconstpointer       data,
                             gsize               size)
 {
-  gpointer mydata = g_memdup (data, size);
+  GVariant *value;
+  GBytes *bytes;
 
-  return g_variant_new_serialised (g_variant_type_info_get (type),
-                                   g_bytes_new_take (mydata, size), mydata, size, TRUE);
+  bytes = g_bytes_new (data, size);
+  value = g_variant_new_from_bytes (type, bytes, TRUE);
+  g_bytes_unref (bytes);
+
+  return value;
 }
 
 /**
@@ -338,7 +342,7 @@ g_variant_get_boolean (GVariant *value)
 }
 
 /* the constructors and accessors for byte, int{16,32,64}, handles and
- * floats all look pretty much exactly the same, so we reduce
+ * doubles all look pretty much exactly the same, so we reduce
  * copy/pasting here.
  */
 #define NUMERIC_TYPE(TYPE, type, ctype) \
@@ -563,31 +567,6 @@ NUMERIC_TYPE (UINT64, uint64, guint64)
 NUMERIC_TYPE (HANDLE, handle, gint32)
 
 /**
- * g_variant_new_float:
- * @value: a #gfloat floating point value
- *
- * Creates a new float #GVariant instance.
- *
- * Returns: (transfer none): a floating reference to a new float #GVariant instance
- *
- * Since: 2.44
- **/
-/**
- * g_variant_get_float:
- * @value: a float #GVariant instance
- *
- * Returns the single precision floating point value of @value.
- *
- * It is an error to call this function with a @value of any type
- * other than %G_VARIANT_TYPE_FLOAT.
- *
- * Returns: a #gfloat
- *
- * Since: 2.44
- **/
-NUMERIC_TYPE (FLOAT, float, gfloat)
-
-/**
  * g_variant_new_double:
  * @value: a #gdouble floating point value
  *
@@ -637,8 +616,8 @@ GVariant *
 g_variant_new_maybe (const GVariantType *child_type,
                      GVariant           *child)
 {
-  GVariantTypeInfo *type_info;
   GVariantType *maybe_type;
+  GVariant *value;
 
   g_return_val_if_fail (child_type == NULL || g_variant_type_is_definite
                         (child_type), 0);
@@ -651,8 +630,6 @@ g_variant_new_maybe (const GVariantType *child_type,
     child_type = g_variant_get_type (child);
 
   maybe_type = g_variant_type_new_maybe (child_type);
-  type_info = g_variant_type_info_get (maybe_type);
-  g_variant_type_free (maybe_type);
 
   if (child != NULL)
     {
@@ -663,10 +640,14 @@ g_variant_new_maybe (const GVariantType *child_type,
       children[0] = g_variant_ref_sink (child);
       trusted = g_variant_is_trusted (children[0]);
 
-      return g_variant_new_from_children (type_info, children, 1, trusted);
+      value = g_variant_new_from_children (maybe_type, children, 1, trusted);
     }
   else
-    return g_variant_new_from_children (type_info, NULL, 0, TRUE);
+    value = g_variant_new_from_children (maybe_type, NULL, 0, TRUE);
+
+  g_variant_type_free (maybe_type);
+
+  return value;
 }
 
 /**
@@ -712,7 +693,7 @@ g_variant_new_variant (GVariant *value)
 
   g_variant_ref_sink (value);
 
-  return g_variant_new_from_children (g_variant_type_info_get (G_VARIANT_TYPE_VARIANT),
+  return g_variant_new_from_children (G_VARIANT_TYPE_VARIANT,
                                       g_memdup (&value, sizeof value),
                                       1, g_variant_is_trusted (value));
 }
@@ -768,10 +749,10 @@ g_variant_new_array (const GVariantType *child_type,
                      GVariant * const   *children,
                      gsize               n_children)
 {
-  GVariantTypeInfo *type_info;
   GVariantType *array_type;
   GVariant **my_children;
   gboolean trusted;
+  GVariant *value;
   gsize i;
 
   g_return_val_if_fail (n_children > 0 || child_type != NULL, NULL);
@@ -785,8 +766,6 @@ g_variant_new_array (const GVariantType *child_type,
   if (child_type == NULL)
     child_type = g_variant_get_type (children[0]);
   array_type = g_variant_type_new_array (child_type);
-  type_info = g_variant_type_info_get (array_type);
-  g_variant_type_free (array_type);
 
   for (i = 0; i < n_children; i++)
     {
@@ -795,7 +774,11 @@ g_variant_new_array (const GVariantType *child_type,
       trusted &= g_variant_is_trusted (children[i]);
     }
 
-  return g_variant_new_from_children (type_info, my_children, n_children, trusted);
+  value = g_variant_new_from_children (array_type, my_children,
+                                       n_children, trusted);
+  g_variant_type_free (array_type);
+
+  return value;
 }
 
 /*< private >
@@ -846,10 +829,10 @@ GVariant *
 g_variant_new_tuple (GVariant * const *children,
                      gsize             n_children)
 {
-  GVariantTypeInfo *type_info;
   GVariantType *tuple_type;
   GVariant **my_children;
   gboolean trusted;
+  GVariant *value;
   gsize i;
 
   g_return_val_if_fail (n_children == 0 || children != NULL, NULL);
@@ -864,10 +847,11 @@ g_variant_new_tuple (GVariant * const *children,
     }
 
   tuple_type = g_variant_make_tuple_type (children, n_children);
-  type_info = g_variant_type_info_get (tuple_type);
+  value = g_variant_new_from_children (tuple_type, my_children,
+                                       n_children, trusted);
   g_variant_type_free (tuple_type);
 
-  return g_variant_new_from_children (type_info, my_children, n_children, trusted);
+  return value;
 }
 
 /*< private >
@@ -905,7 +889,6 @@ GVariant *
 g_variant_new_dict_entry (GVariant *key,
                           GVariant *value)
 {
-  GVariantTypeInfo *type_info;
   GVariantType *dict_type;
   GVariant **children;
   gboolean trusted;
@@ -919,10 +902,10 @@ g_variant_new_dict_entry (GVariant *key,
   trusted = g_variant_is_trusted (key) && g_variant_is_trusted (value);
 
   dict_type = g_variant_make_dict_entry_type (key, value);
-  type_info = g_variant_type_info_get (dict_type);
+  value = g_variant_new_from_children (dict_type, children, 2, trusted);
   g_variant_type_free (dict_type);
 
-  return g_variant_new_from_children (type_info, children, 2, trusted);
+  return value;
 }
 
 /**
@@ -1098,7 +1081,6 @@ g_variant_lookup_value (GVariant           *dictionary,
  * - %G_VARIANT_TYPE_BOOLEAN: #guchar (not #gboolean!)
  * - %G_VARIANT_TYPE_BYTE: #guchar
  * - %G_VARIANT_TYPE_HANDLE: #guint32
- * - %G_VARIANT_TYPE_FLOAT: #gfloat
  * - %G_VARIANT_TYPE_DOUBLE: #gdouble
  *
  * For example, if calling this function for an array of 32-bit integers,
@@ -1551,7 +1533,7 @@ g_variant_new_strv (const gchar * const *strv,
   for (i = 0; i < length; i++)
     strings[i] = g_variant_ref_sink (g_variant_new_string (strv[i]));
 
-  return g_variant_new_from_children (g_variant_type_info_get (G_VARIANT_TYPE_STRING_ARRAY),
+  return g_variant_new_from_children (G_VARIANT_TYPE_STRING_ARRAY,
                                       strings, length, TRUE);
 }
 
@@ -1687,7 +1669,7 @@ g_variant_new_objv (const gchar * const *strv,
   for (i = 0; i < length; i++)
     strings[i] = g_variant_ref_sink (g_variant_new_object_path (strv[i]));
 
-  return g_variant_new_from_children (g_variant_type_info_get (G_VARIANT_TYPE_OBJECT_PATH_ARRAY),
+  return g_variant_new_from_children (G_VARIANT_TYPE_OBJECT_PATH_ARRAY,
                                       strings, length, TRUE);
 }
 
@@ -1924,7 +1906,7 @@ g_variant_new_bytestring_array (const gchar * const *strv,
   for (i = 0; i < length; i++)
     strings[i] = g_variant_ref_sink (g_variant_new_bytestring (strv[i]));
 
-  return g_variant_new_from_children (g_variant_type_info_get (G_VARIANT_TYPE_BYTESTRING_ARRAY),
+  return g_variant_new_from_children (G_VARIANT_TYPE_BYTESTRING_ARRAY,
                                       strings, length, TRUE);
 }
 
@@ -2134,8 +2116,6 @@ g_variant_is_container (GVariant *value)
  * @G_VARIANT_CLASS_INT64: The #GVariant is a signed 64 bit integer.
  * @G_VARIANT_CLASS_UINT64: The #GVariant is an unsigned 64 bit integer.
  * @G_VARIANT_CLASS_HANDLE: The #GVariant is a file handle index.
- * @G_VARIANT_CLASS_FLOAT: The #GVariant is a single precision floating
- *                         point value.
  * @G_VARIANT_CLASS_DOUBLE: The #GVariant is a double precision floating 
  *                          point value.
  * @G_VARIANT_CLASS_STRING: The #GVariant is a normal string.
@@ -2539,32 +2519,6 @@ g_variant_print_string (GVariant *value,
                               g_variant_get_uint64 (value));
       break;
 
-    case G_VARIANT_CLASS_FLOAT:
-      {
-        gchar buffer[100];
-        gint i;
-
-        g_ascii_dtostr (buffer, sizeof buffer, g_variant_get_float (value));
-
-        for (i = 0; buffer[i]; i++)
-          if (buffer[i] == '.' || buffer[i] == 'e' ||
-              buffer[i] == 'n' || buffer[i] == 'N')
-            break;
-
-        /* if there is no '.' or 'e' in the float then add one */
-        if (buffer[i] == '\0')
-          {
-            buffer[i++] = '.';
-            buffer[i++] = '0';
-            buffer[i++] = '\0';
-          }
-
-        if (type_annotate)
-          g_string_append (string, "float ");
-        g_string_append (string, buffer);
-      }
-      break;
-
     case G_VARIANT_CLASS_DOUBLE:
       {
         gchar buffer[100];
@@ -2689,7 +2643,6 @@ g_variant_hash (gconstpointer value_)
     case G_VARIANT_CLASS_INT32:
     case G_VARIANT_CLASS_UINT32:
     case G_VARIANT_CLASS_HANDLE:
-    case G_VARIANT_CLASS_FLOAT:
       {
         const guint *ptr;
 
@@ -2809,7 +2762,7 @@ g_variant_equal (gconstpointer one,
  * two values that have types that are not exactly equal.  For example,
  * you cannot compare a 32-bit signed integer with a 32-bit unsigned
  * integer.  Also note that this function is not particularly
- * well-behaved when it comes to comparison of floats; in particular,
+ * well-behaved when it comes to comparison of doubles; in particular,
  * the handling of incomparable values (ie: NaN) is undefined.
  *
  * If you only require an equality comparison, g_variant_equal() is more
@@ -2876,14 +2829,6 @@ g_variant_compare (gconstpointer one,
       {
         guint64 a_val = g_variant_get_uint64 (a);
         guint64 b_val = g_variant_get_uint64 (b);
-
-        return (a_val == b_val) ? 0 : (a_val > b_val) ? 1 : -1;
-      }
-
-    case G_VARIANT_CLASS_FLOAT:
-      {
-        gfloat a_val = g_variant_get_float (a);
-        gfloat b_val = g_variant_get_float (b);
 
         return (a_val == b_val) ? 0 : (a_val > b_val) ? 1 : -1;
       }
@@ -3667,7 +3612,7 @@ g_variant_builder_end (GVariantBuilder *builder)
   else
     g_assert_not_reached ();
 
-  value = g_variant_new_from_children (g_variant_type_info_get (my_type),
+  value = g_variant_new_from_children (my_type,
                                        g_renew (GVariant *,
                                                 GVSB(builder)->children,
                                                 GVSB(builder)->offset),
@@ -4223,8 +4168,8 @@ g_variant_format_string_scan (const gchar  *string,
   switch (next_char())
     {
     case 'b': case 'y': case 'n': case 'q': case 'i': case 'u':
-    case 'x': case 't': case 'h': case 'f': case 'd': case 's':
-    case 'o': case 'g': case 'v': case '*': case '?': case 'r':
+    case 'x': case 't': case 'h': case 'd': case 's': case 'o':
+    case 'g': case 'v': case '*': case '?': case 'r':
       break;
 
     case 'm':
@@ -4887,7 +4832,6 @@ g_variant_valist_skip_leaf (const gchar **str,
       va_arg (*app, guint64);
       return;
 
-    case 'f':
     case 'd':
       va_arg (*app, gdouble);
       return;
@@ -4933,9 +4877,6 @@ g_variant_valist_new_leaf (const gchar **str,
     case 'h':
       return g_variant_new_handle (va_arg (*app, gint));
 
-    case 'f':
-      return g_variant_new_float (va_arg (*app, gdouble));
-
     case 'd':
       return g_variant_new_double (va_arg (*app, gdouble));
 
@@ -4946,7 +4887,6 @@ g_variant_valist_new_leaf (const gchar **str,
 
 /* The code below assumes this */
 G_STATIC_ASSERT (sizeof (gboolean) == sizeof (guint32));
-G_STATIC_ASSERT (sizeof (gfloat) == sizeof (guint32));
 G_STATIC_ASSERT (sizeof (gdouble) == sizeof (guint64));
 
 static void
@@ -5020,10 +4960,6 @@ g_variant_valist_get_leaf (const gchar **str,
           *(gint32 *) ptr = g_variant_get_handle (value);
           return;
 
-        case 'f':
-          *(gfloat *) ptr = g_variant_get_float (value);
-          return;
-
         case 'd':
           *(gdouble *) ptr = g_variant_get_double (value);
           return;
@@ -5046,7 +4982,6 @@ g_variant_valist_get_leaf (const gchar **str,
         case 'u':
         case 'h':
         case 'b':
-        case 'f':
           *(guint32 *) ptr = 0;
           return;
 
@@ -5770,9 +5705,6 @@ g_variant_deep_copy (GVariant *value)
     case G_VARIANT_CLASS_HANDLE:
       return g_variant_new_handle (g_variant_get_handle (value));
 
-    case G_VARIANT_CLASS_FLOAT:
-      return g_variant_new_float (g_variant_get_float (value));
-
     case G_VARIANT_CLASS_DOUBLE:
       return g_variant_new_double (g_variant_get_double (value));
 
@@ -5835,7 +5767,8 @@ g_variant_get_normal_form (GVariant *value)
  * Performs a byteswapping operation on the contents of @value.  The
  * result is that all multi-byte numeric data contained in @value is
  * byteswapped.  That includes 16, 32, and 64bit signed and unsigned
- * integers as well as file handles and floating point values.
+ * integers as well as file handles and double precision floating point
+ * values.
  *
  * This function is an identity mapping on any value that does not
  * contain multi-byte numeric data.  That include strings, booleans,
@@ -5931,99 +5864,21 @@ g_variant_new_from_data (const GVariantType *type,
                          GDestroyNotify      notify,
                          gpointer            user_data)
 {
+  GVariant *value;
   GBytes *bytes;
 
   g_return_val_if_fail (g_variant_type_is_definite (type), NULL);
   g_return_val_if_fail (data != NULL || size == 0, NULL);
-
-  if (size == 0)
-    {
-      if (notify)
-        {
-          (* notify) (user_data);
-          notify = NULL;
-        }
-
-      data = NULL;
-    }
 
   if (notify)
     bytes = g_bytes_new_with_free_func (data, size, notify, user_data);
   else
     bytes = g_bytes_new_static (data, size);
 
-  return g_variant_new_serialised (g_variant_type_info_get (type), bytes, data, size, trusted);
-}
+  value = g_variant_new_from_bytes (type, bytes, trusted);
+  g_bytes_unref (bytes);
 
-/**
- * g_variant_new_from_bytes:
- * @type: a #GVariantType
- * @bytes: a #GBytes
- * @trusted: if the contents of @bytes are trusted
- *
- * Constructs a new serialised-mode #GVariant instance.  This is the
- * inner interface for creation of new serialised values that gets
- * called from various functions in gvariant.c.
- *
- * A reference is taken on @bytes.
- *
- * Returns: (transfer none): a new #GVariant with a floating reference
- *
- * Since: 2.36
- */
-GVariant *
-g_variant_new_from_bytes (const GVariantType *type,
-                          GBytes             *bytes,
-                          gboolean            trusted)
-{
-  gconstpointer data;
-  gsize size;
-
-  g_return_val_if_fail (g_variant_type_is_definite (type), NULL);
-
-  data = g_bytes_get_data (bytes, &size);
-
-  return g_variant_new_serialised (g_variant_type_info_get (type), g_bytes_ref (bytes), data, size, trusted);
-}
-
-/**
- * g_variant_get_data_as_bytes:
- * @value: a #GVariant
- *
- * Returns a pointer to the serialised form of a #GVariant instance.
- * The semantics of this function are exactly the same as
- * g_variant_get_data(), except that the returned #GBytes holds
- * a reference to the variant data.
- *
- * Returns: (transfer full): A new #GBytes representing the variant data
- *
- * Since: 2.36
- */
-GBytes *
-g_variant_get_data_as_bytes (GVariant *value)
-{
-  gconstpointer data;
-  GBytes *bytes;
-  gsize size;
-  gconstpointer bytes_data;
-  gsize bytes_size;
-
-  data = g_variant_get_serialised (value, &bytes, &size);
-  bytes_data = g_bytes_get_data (bytes, &bytes_size);
-
-  /* Try to reuse the GBytes held internally by GVariant, if it exists
-   * and is covering exactly the correct range.
-   */
-  if (data == bytes_data && size == bytes_size)
-    return g_bytes_ref (bytes);
-
-  /* See g_variant_get_data() about why it can return NULL... */
-  else if (data == NULL)
-    return g_bytes_new_take (g_malloc0 (size), size);
-
-  /* Otherwise, make a new GBytes with reference to the old. */
-  else
-    return g_bytes_new_with_free_func (data, size, (GDestroyNotify) g_bytes_unref, g_bytes_ref (bytes));
+  return value;
 }
 
 /* Epilogue {{{1 */

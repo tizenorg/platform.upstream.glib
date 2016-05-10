@@ -2852,7 +2852,8 @@ msgstr "Neznámá chyba při spojení"
 
 #: ../gio/gsocketclient.c:1081 ../gio/gsocketclient.c:1535
 msgid "Proxying over a non-TCP connection is not supported."
-msgstr "Není podporován pokus o proxy přes spojení, které není založeno na TCP."
+msgstr ""
+"Není podporován pokus o proxy přes spojení, které není založeno na TCP."
 
 #: ../gio/gsocketclient.c:1110 ../gio/gsocketclient.c:1561
 #, c-format

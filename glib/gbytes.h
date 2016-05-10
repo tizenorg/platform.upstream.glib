@@ -39,11 +39,6 @@ GLIB_AVAILABLE_IN_ALL
 GBytes *        g_bytes_new_take                (gpointer        data,
                                                  gsize           size);
 
-#ifdef G_OS_UNIX
-GLIB_AVAILABLE_IN_2_44
-GBytes *        g_bytes_new_take_zero_copy_fd   (gint            fd);
-#endif
-
 GLIB_AVAILABLE_IN_ALL
 GBytes *        g_bytes_new_static              (gconstpointer   data,
                                                  gsize           size);
@@ -65,9 +60,6 @@ gconstpointer   g_bytes_get_data                (GBytes         *bytes,
 
 GLIB_AVAILABLE_IN_ALL
 gsize           g_bytes_get_size                (GBytes         *bytes);
-
-GLIB_AVAILABLE_IN_2_44
-gint            g_bytes_get_zero_copy_fd        (GBytes         *bytes);
 
 GLIB_AVAILABLE_IN_ALL
 GBytes *        g_bytes_ref                     (GBytes         *bytes);

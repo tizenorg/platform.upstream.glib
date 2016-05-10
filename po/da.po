@@ -2213,7 +2213,7 @@ msgstr "Filen blev modificeret eksternt"
 msgid "Error removing old file: %s"
 msgstr "Fejl under fjernelse af gammel fil: %s"
 
-#: ../gio/gmemoryinputstream.c:471 ../gio/gmemoryoutputstream.c:769
+#: ../gio/gmemoryinputstream.c:471 ../gio/gmemoryoutputstream.c:771
 msgid "Invalid GSeekType supplied"
 msgstr "Ugyldig GSeekType angivet"
 
@@ -2233,7 +2233,7 @@ msgstr "Hukommelses-uddatastrøm kan ikke ændre størrelse"
 msgid "Failed to resize memory output stream"
 msgstr "Kunne ikke ændre størrelse for hukommelses-uddatastrøm"
 
-#: ../gio/gmemoryoutputstream.c:671
+#: ../gio/gmemoryoutputstream.c:673
 msgid ""
 "Amount of memory required to process the write is larger than available "
 "address space"
@@ -2241,11 +2241,11 @@ msgstr ""
 "Mængden af hukommelse, der kræves af skrivningen, er større end det "
 "tilgængelige adresserum"
 
-#: ../gio/gmemoryoutputstream.c:779
+#: ../gio/gmemoryoutputstream.c:781
 msgid "Requested seek before the beginning of the stream"
 msgstr "Forespurgte om søgning før begyndelse af strøm"
 
-#: ../gio/gmemoryoutputstream.c:794
+#: ../gio/gmemoryoutputstream.c:796
 msgid "Requested seek beyond the end of the stream"
 msgstr "Forespurgte om søgning efter afslutning af strøm"
 

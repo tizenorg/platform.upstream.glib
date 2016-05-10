@@ -22,7 +22,6 @@
 #define __G_VARIANT_SERIALISER_H__
 
 #include "gvarianttypeinfo.h"
-#include "gvariant-vectors.h"
 
 typedef struct
 {
@@ -31,25 +30,12 @@ typedef struct
   gsize             size;
 } GVariantSerialised;
 
-typedef struct
-{
-  GVariantTypeInfo *type_info;
-  gsize             skip;
-  gsize             size;
-} GVariantUnpacked;
-
 /* deserialisation */
 GLIB_AVAILABLE_IN_ALL
 gsize                           g_variant_serialised_n_children         (GVariantSerialised        container);
 GLIB_AVAILABLE_IN_ALL
 GVariantSerialised              g_variant_serialised_get_child          (GVariantSerialised        container,
                                                                          gsize                     index);
-
-gboolean                        g_variant_serialiser_unpack_all         (GVariantTypeInfo         *type_info,
-                                                                         const guchar             *end_pointer,
-                                                                         gsize                     end_size,
-                                                                         gsize                     total_size,
-                                                                         GArray                   *unpacked_children);
 
 /* serialisation */
 typedef void                  (*GVariantSerialisedFiller)               (GVariantSerialised       *serialised,
@@ -83,15 +69,5 @@ gboolean                        g_variant_serialiser_is_object_path     (gconstp
 GLIB_AVAILABLE_IN_ALL
 gboolean                        g_variant_serialiser_is_signature       (gconstpointer             data,
                                                                          gsize                     size);
-
-
-gsize                           g_variant_callback_write_to_vectors     (GVariantVectors          *vectors,
-                                                                         gpointer                  data,
-                                                                         GVariantTypeInfo        **type_info);
-void                            g_variant_serialiser_write_to_vectors   (GVariantVectors          *items,
-                                                                         GVariantTypeInfo         *type_info,
-                                                                         gsize                     size,
-                                                                         const gpointer           *children,
-                                                                         gsize                     n_children);
 
 #endif /* __G_VARIANT_SERIALISER_H__ */

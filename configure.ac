@@ -257,10 +257,6 @@ AC_ARG_ENABLE(rebuilds,
               [AS_HELP_STRING([--disable-rebuilds],
                               [disable all source autogeneration rules])],,
               [enable_rebuilds=yes])
-AC_ARG_ENABLE(libdbuspolicy,
-              [AS_HELP_STRING([--enable-libdbuspolicy],
-                              [enable libdbuspolicy for kdbus transport [default=no]])],,
-              [enable_libdbuspolicy=no])
 
 GLIB_TESTS
 
@@ -277,16 +273,6 @@ AS_IF([test "x$disable_mem_pools" = "xno"], [
   AC_DEFINE(DISABLE_MEM_POOLS, [1], [Whether to disable memory pools])
   AC_MSG_RESULT([yes])
 ])
-
-AC_MSG_CHECKING([whether to enable libdbuspolicy for kdbus transport])
-AM_CONDITIONAL(LIBDBUSPOLICY, [test "x$enable_libdbuspolicy" = "xyes"])
-AS_IF([test "x$enable_libdbuspolicy" = "xyes"], [
-  PKG_CHECK_MODULES(LIBDBUSPOLICY1, libdbuspolicy1 >= 1)
-  AC_SUBST(LIBDBUSPOLICY1_CFLAGS)
-  AC_SUBST(LIBDBUSPOLICY1_LIBS)
-  AC_DEFINE(LIBDBUSPOLICY, 1, [Whether to enable libdbuspolicy for kdbus transport])
-  AC_MSG_RESULT([yes])
-], [ AC_MSG_RESULT([no]) ])
 
 dnl location to install runtime libraries, e.g. ../../lib to install
 dnl to /lib if libdir is /usr/lib
@@ -723,7 +709,7 @@ AC_CHECK_HEADERS([sys/param.h sys/resource.h mach/mach_time.h])
 AC_CHECK_HEADERS([sys/select.h stdint.h inttypes.h sched.h malloc.h])
 AC_CHECK_HEADERS([sys/vfs.h sys/vmount.h sys/statfs.h sys/statvfs.h sys/filio.h])
 AC_CHECK_HEADERS([mntent.h sys/mnttab.h sys/vfstab.h sys/mntctl.h fstab.h])
-AC_CHECK_HEADERS([linux/magic.h linux/memfd.h sys/prctl.h])
+AC_CHECK_HEADERS([linux/magic.h sys/prctl.h])
 
 # Some versions of MSC lack these
 AC_CHECK_HEADERS([dirent.h sys/time.h])

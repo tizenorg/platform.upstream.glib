@@ -455,13 +455,7 @@ pattern_coalesce (const gchar *left,
               (*one)++;
             }
 
-          else if (**one == 'N' && strchr ("ynqiuxthfd", **the_other))
-            {
-              *out++ = *(*the_other)++;
-              (*one)++;
-            }
-
-          else if (**one == 'D' && (**the_other == 'f' || **the_other == 'd'))
+          else if (**one == 'N' && strchr ("ynqiuxthd", **the_other))
             {
               *out++ = *(*the_other)++;
               (*one)++;
@@ -620,10 +614,6 @@ ast_resolve (AST     *ast,
 
       case 'N':
         pattern[j++] = 'i';
-        break;
-
-      case 'D':
-        pattern[j++] = 'd';
         break;
 
       default:
@@ -1256,7 +1246,7 @@ dictionary_get_pattern (AST     *ast,
   /* the basic types,
    * plus undetermined number type and undetermined string type.
    */
-  if (!strchr ("bynqiuxthfdsogNDS", key_char))
+  if (!strchr ("bynqiuxthdsogNS", key_char))
     {
       ast_set_error (ast, error, NULL,
                      G_VARIANT_PARSE_ERROR_BASIC_TYPE_EXPECTED,
@@ -1802,7 +1792,7 @@ number_get_pattern (AST     *ast,
       (!g_str_has_prefix (number->token, "0x") && strchr (number->token, 'e')) ||
       strstr (number->token, "inf") ||
       strstr (number->token, "nan"))
-    return g_strdup ("MD");
+    return g_strdup ("Md");
 
   return g_strdup ("MN");
 }
@@ -1827,16 +1817,17 @@ number_get_value (AST                 *ast,
   Number *number = (Number *) ast;
   const gchar *token;
   gboolean negative;
+  gboolean floating;
   guint64 abs_val;
   gdouble dbl_val;
-  gchar typechar;
   gchar *end;
 
-  typechar = *g_variant_type_peek_string (type);
   token = number->token;
 
-  if (typechar == 'f' || typechar == 'd')
+  if (g_variant_type_equal (type, G_VARIANT_TYPE_DOUBLE))
     {
+      floating = TRUE;
+
       errno = 0;
       dbl_val = g_ascii_strtod (token, &end);
       if (dbl_val != 0.0 && errno == ERANGE)
@@ -1853,6 +1844,7 @@ number_get_value (AST                 *ast,
     }
   else
     {
+      floating = FALSE;
       negative = token[0] == '-';
       if (token[0] == '-')
         token++;
@@ -1888,7 +1880,10 @@ number_get_value (AST                 *ast,
       return NULL;
      }
 
-  switch (typechar)
+  if (floating)
+    return g_variant_new_double (dbl_val);
+
+  switch (*g_variant_type_peek_string (type))
     {
     case 'y':
       if (negative || abs_val > G_MAXUINT8)
@@ -1929,12 +1924,6 @@ number_get_value (AST                 *ast,
       if (abs_val - negative > G_MAXINT32)
         return number_overflow (ast, type, error);
       return g_variant_new_handle (negative ? -abs_val : abs_val);
-
-    case 'f':
-      return g_variant_new_float (dbl_val);
-
-    case 'd':
-      return g_variant_new_double (dbl_val);
 
     default:
       return ast_type_error (ast, type, error);
@@ -2220,9 +2209,6 @@ typedecl_parse (TokenStream  *stream,
 
       else if (token_stream_consume (stream, "uint64"))
         type = g_variant_type_copy (G_VARIANT_TYPE_UINT64);
-
-      else if (token_stream_consume (stream, "float"))
-        type = g_variant_type_copy (G_VARIANT_TYPE_FLOAT);
 
       else if (token_stream_consume (stream, "double"))
         type = g_variant_type_copy (G_VARIANT_TYPE_DOUBLE);
