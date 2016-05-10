@@ -40,7 +40,10 @@
  * (g_output_stream_flush()). 
  *
  * To copy the content of an input stream to an output stream without 
- * manually handling the reads and writes, use g_output_stream_splice(). 
+ * manually handling the reads and writes, use g_output_stream_splice().
+ *
+ * See the documentation for #GIOStream for details of thread safety of
+ * streaming APIs.
  *
  * All of these functions have async variants too.
  **/
@@ -605,7 +608,8 @@ g_output_stream_real_splice (GOutputStream             *stream,
   if (flags & G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET)
     {
       /* But write errors on close are bad! */
-      res = g_output_stream_internal_close (stream, cancellable, error);
+      if (!g_output_stream_internal_close (stream, cancellable, error))
+        res = FALSE;
     }
 
   if (res)

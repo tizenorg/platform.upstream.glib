@@ -30,6 +30,8 @@
 #include "gdbusmethodinvocation.h"
 #include "gdbuserror.h"
 
+#include "gioerror.h"
+
 #include "glibintl.h"
 
 /**
@@ -45,6 +47,14 @@
  * object hierarchy is broadcast using signals. This means that D-Bus
  * clients can keep caches up to date by only listening to D-Bus
  * signals.
+ *
+ * The recommended path to export an object manager at is the path form of the
+ * well-known name of a D-Bus service, or below. For example, if a D-Bus service
+ * is available at the well-known name `net.example.ExampleService1`, the object
+ * manager should typically be exported at `/net/example/ExampleService1`, or
+ * below (to allow for multiple object managers in a service).
+ *
+ * It is not supported to export an object manager at the root path, `/`.
  *
  * See #GDBusObjectManagerClient for the client-side code that is
  * intended to be used with #GDBusObjectManagerServer or any D-Bus
@@ -234,14 +244,15 @@ g_dbus_object_manager_server_init (GDBusObjectManagerServer *manager)
 
 /**
  * g_dbus_object_manager_server_new:
- * @object_path: The object path to export the manager object at.
+ * @object_path: The object path to export the manager object at, which should
+ * not be `/`.
  *
  * Creates a new #GDBusObjectManagerServer object.
  *
  * The returned server isn't yet exported on any connection. To do so,
  * use g_dbus_object_manager_server_set_connection(). Normally you
- * want to export all of your objects before doing so to avoid <ulink
- * url="http://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-objectmanager">InterfacesAdded</ulink>
+ * want to export all of your objects before doing so to avoid
+ * [InterfacesAdded](http://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-objectmanager)
  * signals being emitted.
  *
  * Returns: A #GDBusObjectManagerServer object. Free with g_object_unref().
@@ -927,7 +938,12 @@ g_dbus_object_manager_server_emit_interfaces_added (GDBusObjectManagerServer *ma
                                                 object_path,
                                                 &array_builder),
                                  &error);
-  g_assert_no_error (error);
+  if (error)
+    {
+      if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CLOSED))
+        g_warning ("Couldn't emit InterfacesAdded signal: %s", error->message);
+      g_error_free (error);
+    }
  out:
   ;
 }
@@ -960,7 +976,12 @@ g_dbus_object_manager_server_emit_interfaces_removed (GDBusObjectManagerServer *
                                                 object_path,
                                                 &array_builder),
                                  &error);
-  g_assert_no_error (error);
+  if (error)
+    {
+      if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CLOSED))
+        g_warning ("Couldn't emit InterfacesRemoved signal: %s", error->message);
+      g_error_free (error);
+    }
  out:
   ;
 }

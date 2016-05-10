@@ -69,14 +69,8 @@ typedef struct {
                                                          guint        flags);
   GDir *                (* g_dir_new_from_dirp)         (gpointer dirp);
 
-  void                  (* g_variant_to_vectors)        (GVariant    *value,
-                                                         GVariantVectors *vectors);
-  GVariant *            (* g_variant_from_vectors)      (const GVariantType *type,
-                                                         GVariantVector  *vectors,
-                                                         gsize            n_vectors,
-                                                         gsize size,
-                                                         gboolean trusted);
-  void                  (* g_variant_vectors_deinit)    (GVariantVectors *vectors);
+  /* See glib-init.c */
+  void                  (* glib_init)                   (void);
 
   /* Add other private functions here, initialize them in glib-private.c */
 } GLibPrivateVTable;

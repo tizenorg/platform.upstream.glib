@@ -328,9 +328,14 @@ typedef enum {
  *   by file renames (moves) and send a single G_FILE_MONITOR_EVENT_MOVED
  *   event instead (NB: not supported on all backends; the default
  *   behaviour -without specifying this flag- is to send single DELETED
- *   and CREATED events).
+ *   and CREATED events).  Deprecated since 2.44: use
+ *   %G_FILE_MONITOR_WATCH_MOVES instead.
  * @G_FILE_MONITOR_WATCH_HARD_LINKS: Watch for changes to the file made
  *   via another hard link. Since 2.36.
+ * @G_FILE_MONITOR_WATCH_MOVES: Watch for rename operations on a
+ *   monitored directory.  This causes %G_FILE_MONITOR_EVENT_RENAMED,
+ *   %G_FILE_MONITOR_EVENT_MOVED_IN and %G_FILE_MONITOR_EVENT_MOVED_OUT
+ *   events to be emitted when possible.  Since: 2.44.
  *
  * Flags used to set what a #GFileMonitor will watch for.
  */
@@ -338,7 +343,8 @@ typedef enum {
   G_FILE_MONITOR_NONE             = 0,
   G_FILE_MONITOR_WATCH_MOUNTS     = (1 << 0),
   G_FILE_MONITOR_SEND_MOVED       = (1 << 1),
-  G_FILE_MONITOR_WATCH_HARD_LINKS = (1 << 2)
+  G_FILE_MONITOR_WATCH_HARD_LINKS = (1 << 2),
+  G_FILE_MONITOR_WATCH_MOVES      = (1 << 3)
 } GFileMonitorFlags;
 
 
@@ -393,7 +399,17 @@ typedef enum {
  * @G_FILE_MONITOR_EVENT_ATTRIBUTE_CHANGED: a file attribute was changed.
  * @G_FILE_MONITOR_EVENT_PRE_UNMOUNT: the file location will soon be unmounted.
  * @G_FILE_MONITOR_EVENT_UNMOUNTED: the file location was unmounted.
- * @G_FILE_MONITOR_EVENT_MOVED: the file was moved.
+ * @G_FILE_MONITOR_EVENT_MOVED: the file was moved -- only sent if the
+ *   (deprecated) %G_FILE_MONITOR_SEND_MOVED flag is set
+ * @G_FILE_MONITOR_EVENT_RENAMED: the file was renamed within the
+ *   current directory -- only sent if the %G_FILE_MONITOR_WATCH_MOVES
+ *   flag is set.  Since: 2.44.
+ * @G_FILE_MONITOR_EVENT_MOVED_IN: the file was moved into the
+ *   monitored directory from another location -- only sent if the
+ *   %G_FILE_MONITOR_WATCH_MOVES flag is set.  Since: 2.44.
+ * @G_FILE_MONITOR_EVENT_MOVED_OUT: the file was moved out of the
+ *   monitored directory to another location -- only sent if the
+ *   %G_FILE_MONITOR_WATCH_MOVES flag is set.  Since: 2.44
  *
  * Specifies what type of event a monitor event is.
  **/
@@ -405,7 +421,10 @@ typedef enum {
   G_FILE_MONITOR_EVENT_ATTRIBUTE_CHANGED,
   G_FILE_MONITOR_EVENT_PRE_UNMOUNT,
   G_FILE_MONITOR_EVENT_UNMOUNTED,
-  G_FILE_MONITOR_EVENT_MOVED
+  G_FILE_MONITOR_EVENT_MOVED,
+  G_FILE_MONITOR_EVENT_RENAMED,
+  G_FILE_MONITOR_EVENT_MOVED_IN,
+  G_FILE_MONITOR_EVENT_MOVED_OUT
 } GFileMonitorEvent;
 
 
@@ -476,6 +495,7 @@ typedef enum {
  *     returned %G_IO_ERROR_FAILED. Now they should all return the same
  *     value, which has this more logical name. Since 2.44.
  * @G_IO_ERROR_NOT_CONNECTED: Transport endpoint is not connected. Since 2.44
+ * @G_IO_ERROR_MESSAGE_TOO_LARGE: Message too large. Since 2.48.
  *
  * Error codes returned by GIO functions.
  *
@@ -540,7 +560,8 @@ typedef enum {
   G_IO_ERROR_PROXY_NOT_ALLOWED,
   G_IO_ERROR_BROKEN_PIPE,
   G_IO_ERROR_CONNECTION_CLOSED = G_IO_ERROR_BROKEN_PIPE,
-  G_IO_ERROR_NOT_CONNECTED
+  G_IO_ERROR_NOT_CONNECTED,
+  G_IO_ERROR_MESSAGE_TOO_LARGE,
 } GIOErrorEnum;
 
 
@@ -1027,14 +1048,14 @@ typedef enum
  * @G_DBUS_PROXY_FLAGS_NONE: No flags set.
  * @G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES: Don't load properties.
  * @G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS: Don't connect to signals on the remote object.
- * @G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START: If not set and the proxy if for a well-known name,
- * then request the bus to launch an owner for the name if no-one owns the name. This flag can
- * only be used in proxies for well-known names.
+ * @G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START: If the proxy is for a well-known name,
+ * do not ask the bus to launch an owner during proxy initialization or a method call.
+ * This flag is only meaningful in proxies for well-known names.
  * @G_DBUS_PROXY_FLAGS_GET_INVALIDATED_PROPERTIES: If set, the property value for any <emphasis>invalidated property</emphasis> will be (asynchronously) retrieved upon receiving the <ulink url="http://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-properties">PropertiesChanged</ulink> D-Bus signal and the property will not cause emission of the #GDBusProxy::g-properties-changed signal. When the value is received the #GDBusProxy::g-properties-changed signal is emitted for the property along with the retrieved value. Since 2.32.
  * @G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START_AT_CONSTRUCTION: If the proxy is for a well-known name,
  * do not ask the bus to launch an owner during proxy initialization, but allow it to be
  * autostarted by a method call. This flag is only meaningful in proxies for well-known names,
- * and only if %G_DBUS_PROXY_FLAGS_DO_NOT_AUTOSTART is not also specified.
+ * and only if %G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START is not also specified.
  *
  * Flags used when constructing an instance of a #GDBusProxy derived class.
  *
@@ -1255,6 +1276,8 @@ typedef enum {
  * @G_DBUS_CALL_FLAGS_NO_AUTO_START: The bus must not launch
  * an owner for the destination name in response to this method
  * invocation.
+ * @G_DBUS_CALL_FLAGS_ALLOW_INTERACTIVE_AUTHORIZATION: the caller is prepared to
+ * wait for interactive authorization. Since 2.46.
  *
  * Flags used in g_dbus_connection_call() and similar APIs.
  *
@@ -1262,7 +1285,8 @@ typedef enum {
  */
 typedef enum {
   G_DBUS_CALL_FLAGS_NONE = 0,
-  G_DBUS_CALL_FLAGS_NO_AUTO_START = (1<<0)
+  G_DBUS_CALL_FLAGS_NO_AUTO_START = (1<<0),
+  G_DBUS_CALL_FLAGS_ALLOW_INTERACTIVE_AUTHORIZATION = (1<<1)
 } GDBusCallFlags;
 /* (1<<31) is reserved for internal use by GDBusConnection, do not use it. */
 
@@ -1292,9 +1316,9 @@ typedef enum {
  * @G_DBUS_MESSAGE_FLAGS_NO_REPLY_EXPECTED: A reply is not expected.
  * @G_DBUS_MESSAGE_FLAGS_NO_AUTO_START: The bus must not launch an
  * owner for the destination name in response to this message.
- * @G_DBUS_MESSAGE_FLAGS_ALLOW_INTERACTIVE_AUTHORIZATION: Inform the
- * receiving side that the caller is prepared to wait for interactive
- * authorization.
+ * @G_DBUS_MESSAGE_FLAGS_ALLOW_INTERACTIVE_AUTHORIZATION: If set on a method
+ * call, this flag means that the caller is prepared to wait for interactive
+ * authorization. Since 2.46.
  *
  * Message flags used in #GDBusMessage.
  *
@@ -1492,7 +1516,7 @@ typedef enum
  *     launching process to the primary instance. Set this flag if your
  *     application is expected to behave differently depending on certain
  *     environment variables. For instance, an editor might be expected
- *     to use the <envar>GIT_COMMITTER_NAME</envar> environment variable
+ *     to use the `GIT_COMMITTER_NAME` environment variable
  *     when editing a git commit message. The environment is available
  *     to the #GApplication::command-line signal handler, via
  *     g_application_command_line_getenv().
@@ -1502,6 +1526,9 @@ typedef enum
  *     owner of the application ID nor does it check if an existing
  *     owner already exists.  Everything occurs in the local process.
  *     Since: 2.30.
+ * @G_APPLICATION_CAN_OVERRIDE_APP_ID: Allow users to override the
+ *     application ID from the command line with `--gapplication-app-id`.
+ *     Since: 2.48
  *
  * Flags used to define the behaviour of a #GApplication.
  *
@@ -1517,7 +1544,9 @@ typedef enum
   G_APPLICATION_HANDLES_COMMAND_LINE = (1 << 3),
   G_APPLICATION_SEND_ENVIRONMENT    =  (1 << 4),
 
-  G_APPLICATION_NON_UNIQUE =           (1 << 5)
+  G_APPLICATION_NON_UNIQUE =           (1 << 5),
+
+  G_APPLICATION_CAN_OVERRIDE_APP_ID =  (1 << 6)
 } GApplicationFlags;
 
 /**
@@ -1796,6 +1825,29 @@ typedef enum {
   G_SOCKET_CLIENT_TLS_HANDSHAKED,
   G_SOCKET_CLIENT_COMPLETE
 } GSocketClientEvent;
+
+/**
+ * GSocketListenerEvent:
+ * @G_SOCKET_LISTENER_BINDING: The listener is about to bind a socket.
+ * @G_SOCKET_LISTENER_BOUND: The listener has bound a socket.
+ * @G_SOCKET_LISTENER_LISTENING: The listener is about to start
+ *    listening on this socket.
+ * @G_SOCKET_LISTENER_LISTENED: The listener is now listening on
+ *   this socket.
+ *
+ * Describes an event occurring on a #GSocketListener. See the
+ * #GSocketListener::event signal for more details.
+ *
+ * Additional values may be added to this type in the future.
+ *
+ * Since: 2.46
+ */
+typedef enum {
+  G_SOCKET_LISTENER_BINDING,
+  G_SOCKET_LISTENER_BOUND,
+  G_SOCKET_LISTENER_LISTENING,
+  G_SOCKET_LISTENER_LISTENED
+} GSocketListenerEvent;
 
 /**
  * GTestDBusFlags:

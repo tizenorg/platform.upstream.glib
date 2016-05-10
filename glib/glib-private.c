@@ -20,6 +20,7 @@
 #include "config.h"
 
 #include "glib-private.h"
+#include "glib-init.h"
 
 /**
  * glib__private__:
@@ -46,9 +47,7 @@ glib__private__ (void)
     g_dir_open_with_errno,
     g_dir_new_from_dirp,
 
-    g_variant_to_vectors,
-    g_variant_from_vectors,
-    g_variant_vectors_deinit
+    glib_init,
   };
 
   return &table;

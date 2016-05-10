@@ -1363,8 +1363,8 @@ g_date_time_add_full (GDateTime *datetime,
 /* Compare, difference, hash, equal {{{1 */
 /**
  * g_date_time_compare:
- * @dt1: first #GDateTime to compare
- * @dt2: second #GDateTime to compare
+ * @dt1: (not nullable): first #GDateTime to compare
+ * @dt2: (not nullable): second #GDateTime to compare
  *
  * A comparison function for #GDateTimes that is suitable
  * as a #GCompareFunc. Both #GDateTimes must be non-%NULL.
@@ -1419,7 +1419,7 @@ g_date_time_difference (GDateTime *end,
 
 /**
  * g_date_time_hash:
- * @datetime: a #GDateTime
+ * @datetime: (not nullable): a #GDateTime
  *
  * Hashes @datetime into a #guint, suitable for use within #GHashTable.
  *
@@ -1435,8 +1435,8 @@ g_date_time_hash (gconstpointer datetime)
 
 /**
  * g_date_time_equal:
- * @dt1: a #GDateTime
- * @dt2: a #GDateTime
+ * @dt1: (not nullable): a #GDateTime
+ * @dt2: (not nullable): a #GDateTime
  *
  * Checks to see if @dt1 and @dt2 are equal.
  *
@@ -2546,7 +2546,7 @@ g_date_time_format_locale (GDateTime   *datetime,
  * - \%A: the full weekday name according to the current locale
  * - \%b: the abbreviated month name according to the current locale
  * - \%B: the full month name according to the current locale
- * - \%c: the  preferred date and time rpresentation for the current locale
+ * - \%c: the preferred date and time representation for the current locale
  * - \%C: the century number (year/100) as a 2-digit integer (00-99)
  * - \%d: the day of the month as a decimal number (range 01 to 31)
  * - \%e: the day of the month as a decimal number (range  1 to 31)

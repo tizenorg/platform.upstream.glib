@@ -254,16 +254,19 @@ g_value_reset (GValue *value)
  * g_value_unset:
  * @value: An initialized #GValue structure.
  *
- * Clears the current value in @value and "unsets" the type,
- * this releases all resources associated with this GValue.
- * An unset value is the same as an uninitialized (zero-filled)
- * #GValue structure.
+ * Clears the current value in @value (if any) and "unsets" the type,
+ * this releases all resources associated with this GValue. An unset
+ * value is the same as an uninitialized (zero-filled) #GValue
+ * structure.
  */
 void
 g_value_unset (GValue *value)
 {
   GTypeValueTable *value_table;
   
+  if (value->g_type == 0)
+    return;
+
   g_return_if_fail (G_IS_VALUE (value));
 
   value_table = g_type_value_table_peek (G_VALUE_TYPE (value));
@@ -376,7 +379,7 @@ g_value_set_instance (GValue  *value,
 /**
  * g_value_init_from_instance:
  * @value: An uninitialized #GValue structure.
- * @instance: the instance
+ * @instance: (type GObject.TypeInstance): the instance
  *
  * Initializes and sets @value from an instantiatable type via the
  * value_table's collect_value() function.

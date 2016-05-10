@@ -46,8 +46,7 @@
 #include "giomodule-priv.h"
 #include "gappinfo.h"
 #include "gappinfoprivate.h"
-#include "glocaldirectorymonitor.h"
-
+#include "glocalfilemonitor.h"
 
 /**
  * SECTION:gdesktopappinfo
@@ -140,7 +139,7 @@ typedef struct
   gchar                      *alternatively_watching;
   gboolean                    is_config;
   gboolean                    is_setup;
-  GLocalDirectoryMonitor     *monitor;
+  GFileMonitor               *monitor;
   GHashTable                 *app_names;
   GHashTable                 *mime_tweaks;
   GHashTable                 *memory_index;
@@ -1335,13 +1334,8 @@ desktop_file_dir_init (DesktopFileDir *dir)
    * does (and we catch the unlikely race), the only degradation is that
    * we will fall back to polling.
    */
-  dir->monitor = g_local_directory_monitor_new_in_worker (watch_dir, G_FILE_MONITOR_NONE, NULL);
-
-  if (dir->monitor)
-    {
-      g_signal_connect (dir->monitor, "changed", G_CALLBACK (desktop_file_dir_changed), dir);
-      g_local_directory_monitor_start (dir->monitor);
-    }
+  dir->monitor = g_local_file_monitor_new_in_worker (watch_dir, TRUE, G_FILE_MONITOR_NONE,
+                                                     desktop_file_dir_changed, dir, NULL);
 
   desktop_file_dir_unindexed_init (dir);
 
@@ -2675,7 +2669,7 @@ g_desktop_app_info_launch_uris_with_spawn (GDesktopAppInfo            *info,
       GPid pid;
       GList *launched_uris;
       GList *iter;
-      char *display, *sn_id = NULL;
+      char *sn_id = NULL;
 
       old_uris = uris;
       if (!expand_application_parameters (info, exec_line, &uris, &argc, &argv, error))
@@ -2714,17 +2708,10 @@ g_desktop_app_info_launch_uris_with_spawn (GDesktopAppInfo            *info,
           data.pid_envvar = NULL;
         }
 
-      display = NULL;
       sn_id = NULL;
       if (launch_context)
         {
           GList *launched_files = create_files_for_uris (launched_uris);
-
-          display = g_app_launch_context_get_display (launch_context,
-                                                      G_APP_INFO (info),
-                                                      launched_files);
-          if (display)
-            envp = g_environ_setenv (envp, "DISPLAY", display, TRUE);
 
           if (info->startup_notify)
             {
@@ -2750,7 +2737,6 @@ g_desktop_app_info_launch_uris_with_spawn (GDesktopAppInfo            *info,
           if (sn_id)
             g_app_launch_context_launch_failed (launch_context, sn_id);
 
-          g_free (display);
           g_free (sn_id);
           g_list_free (launched_uris);
 
@@ -2777,11 +2763,10 @@ g_desktop_app_info_launch_uris_with_spawn (GDesktopAppInfo            *info,
       notify_desktop_launch (session_bus,
                              info,
                              pid,
-                             display,
+                             NULL,
                              sn_id,
                              launched_uris);
 
-      g_free (display);
       g_free (sn_id);
       g_list_free (launched_uris);
 
@@ -3434,6 +3419,7 @@ run_update_command (char *command,
              * chance of debugging it.
              */
             g_warning ("%s", error->message);
+            g_error_free (error);
           }
 
         g_free (argv[1]);
