@@ -991,7 +991,7 @@ class CodeGenerator:
                     %(i.name_lower, i.camel_name), False))
             self.write_gtkdoc_deprecated_and_since_and_close(i, self.c, 0)
             self.c.write('guint\n'
-                         '%s_override_properties (GObjectClass *klass, guint property_id_begin)\n'
+                         '%s_override_properties (GObjectClass *klass G_GNUC_UNUSED, guint property_id_begin)\n'
                          '{\n'%(i.name_lower))
             for p in i.properties:
                 self.c.write ('  g_object_class_override_property (klass, property_id_begin++, "%s");\n'%(p.name_hyphen))
@@ -1528,7 +1528,7 @@ class CodeGenerator:
             self.write_gtkdoc_deprecated_and_since_and_close(m, self.c, 0)
             self.c.write('void\n'
                          '%s_complete_%s (\n'
-                         '    %s *object,\n'
+                         '    %s *object G_GNUC_UNUSED,\n'
                          '    GDBusMethodInvocation *invocation'%(i.name_lower, m.name_lower, i.camel_name))
             if unix_fd:
                 self.c.write(',\n    GUnixFDList *fd_list')
@@ -1614,9 +1614,9 @@ class CodeGenerator:
         # laid out in the same order as introspection data pointers
         #
         self.c.write('static void\n'
-                     '%s_proxy_get_property (GObject      *object,\n'
-                     '  guint         prop_id,\n'
-                     '  GValue       *value,\n'
+                     '%s_proxy_get_property (GObject      *object G_GNUC_UNUSED,\n'
+                     '  guint         prop_id G_GNUC_UNUSED,\n'
+                     '  GValue       *value G_GNUC_UNUSED,\n'
                      '  GParamSpec   *pspec G_GNUC_UNUSED)\n'
                      '{\n'%(i.name_lower))
         if len(i.properties) > 0:
@@ -1667,9 +1667,9 @@ class CodeGenerator:
             self.c.write('}\n'
                          '\n')
         self.c.write('static void\n'
-                     '%s_proxy_set_property (GObject      *object,\n'
-                     '  guint         prop_id,\n'
-                     '  const GValue *value,\n'
+                     '%s_proxy_set_property (GObject      *object G_GNUC_UNUSED,\n'
+                     '  guint         prop_id G_GNUC_UNUSED,\n'
+                     '  const GValue *value G_GNUC_UNUSED,\n'
                      '  GParamSpec   *pspec G_GNUC_UNUSED)\n'
                      '{\n'%(i.name_lower))
         if len(i.properties) > 0:
@@ -1863,7 +1863,7 @@ class CodeGenerator:
                      '\n')
 
         self.c.write('static void\n'
-                     '%s_proxy_iface_init (%sIface *iface)\n'
+                     '%s_proxy_iface_init (%sIface *iface G_GNUC_UNUSED)\n'
                      '{\n'%(i.name_lower, i.camel_name))
         for p in i.properties:
             self.c.write('  iface->get_%s = %s_proxy_get_%s;\n'%(p.name_lower, i.name_lower, p.name_lower))
@@ -2316,7 +2316,7 @@ class CodeGenerator:
                          %(i.name_lower))
 
         self.c.write('static void\n'
-                     '%s_skeleton_dbus_interface_flush (GDBusInterfaceSkeleton *_skeleton)\n'
+                     '%s_skeleton_dbus_interface_flush (GDBusInterfaceSkeleton *_skeleton G_GNUC_UNUSED)\n'
                      '{\n'
                      %(i.name_lower))
         if len(i.properties) > 0:
@@ -2646,7 +2646,7 @@ class CodeGenerator:
                      '\n')
 
         self.c.write('static void\n'
-                     '%s_skeleton_iface_init (%sIface *iface)\n'
+                     '%s_skeleton_iface_init (%sIface *iface G_GNUC_UNUSED)\n'
                      '{\n'
                      %(i.name_lower, i.camel_name))
         for s in i.signals:
