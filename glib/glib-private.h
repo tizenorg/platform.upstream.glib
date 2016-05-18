@@ -20,6 +20,7 @@
 
 #include <glib.h>
 #include "gwakeup.h"
+#include "gvariant-vectors.h"
 
 #if defined(__GNUC__)
 # define _g_alignof(type) (__alignof__ (type))
@@ -30,6 +31,13 @@
 GMainContext *          g_get_worker_context            (void);
 gboolean                g_check_setuid                  (void);
 GMainContext *          g_main_context_new_with_next_id (guint next_id);
+void                    g_variant_to_vectors            (GVariant *value,
+                                                         GVariantVectors *vectors);
+GVariant *              g_variant_from_vectors          (const GVariantType *type,
+                                                         GVariantVector     *vectors,
+                                                         gsize               n_vectors,
+                                                         gsize               size,
+                                                         gboolean            trusted);
 
 #ifdef G_OS_WIN32
 gchar *_glib_get_dll_directory (void);
@@ -63,6 +71,15 @@ typedef struct {
 
   /* See glib-init.c */
   void                  (* glib_init)                   (void);
+
+  void                  (* g_variant_to_vectors)        (GVariant    *value,
+                                                         GVariantVectors *vectors);
+  GVariant *            (* g_variant_from_vectors)      (const GVariantType *type,
+                                                         GVariantVector  *vectors,
+                                                         gsize            n_vectors,
+                                                         gsize size,
+                                                         gboolean trusted);
+  void                  (* g_variant_vectors_deinit)    (GVariantVectors *vectors);
 
   /* Add other private functions here, initialize them in glib-private.c */
 } GLibPrivateVTable;
