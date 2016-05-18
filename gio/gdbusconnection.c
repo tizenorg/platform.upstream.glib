@@ -122,6 +122,7 @@
 #include "gtask.h"
 
 #ifdef G_OS_UNIX
+#include "gkdbus.h"
 #include "gunixconnection.h"
 #include "gunixfdmessage.h"
 #endif
@@ -388,6 +389,10 @@ struct _GDBusConnection
    */
   GDBusWorker *worker;
 
+#ifdef G_OS_UNIX
+  GKDBusWorker *kdbus_worker;
+#endif
+
   /* If connected to a message bus, this contains the unique name assigned to
    * us by the bus (e.g. ":1.42").
    * Read-only after initable_init(), so it may be read if you either
@@ -625,6 +630,7 @@ g_dbus_connection_dispose (GObject *object)
 
   G_LOCK (message_bus_lock);
   CONNECTION_LOCK (connection);
+
   if (connection->worker != NULL)
     {
       _g_dbus_worker_stop (connection->worker);
@@ -632,6 +638,15 @@ g_dbus_connection_dispose (GObject *object)
       if (alive_connections != NULL)
         g_warn_if_fail (g_hash_table_remove (alive_connections, connection));
     }
+#ifdef G_OS_UNIX
+  else if (connection->kdbus_worker != NULL)
+    {
+      _g_kdbus_worker_stop (connection->kdbus_worker);
+      connection->kdbus_worker = NULL;
+      if (alive_connections != NULL)
+        g_warn_if_fail (g_hash_table_remove (alive_connections, connection));
+    }
+#endif
   else
     {
       if (alive_connections != NULL)
@@ -1101,6 +1116,17 @@ g_dbus_connection_init (GDBusConnection *connection)
   connection->filters = g_ptr_array_new ();
 }
 
+#ifdef G_OS_UNIX
+gboolean
+_g_dbus_connection_is_kdbus (GDBusConnection *connection)
+{
+  if (connection->kdbus_worker)
+    return TRUE;
+  else
+    return FALSE;
+}
+#endif
+
 /**
  * g_dbus_connection_get_stream:
  * @connection: a #GDBusConnection
@@ -1147,8 +1173,14 @@ g_dbus_connection_start_message_processing (GDBusConnection *connection)
   if (!check_initialized (connection))
     return;
 
-  g_assert (connection->worker != NULL);
-  _g_dbus_worker_unfreeze (connection->worker);
+  if (connection->worker)
+    _g_dbus_worker_unfreeze (connection->worker);
+#ifdef G_OS_UNIX
+  else if (connection->kdbus_worker)
+    _g_kdbus_worker_unfreeze (connection->kdbus_worker);
+#endif
+  else
+    g_assert_not_reached ();
 }
 
 /**
@@ -1316,11 +1348,20 @@ g_dbus_connection_flush_sync (GDBusConnection  *connection,
   if (!check_unclosed (connection, 0, error))
     goto out;
 
-  g_assert (connection->worker != NULL);
-
-  ret = _g_dbus_worker_flush_sync (connection->worker,
-                                   cancellable,
-                                   error);
+  if (connection->worker != NULL)
+    {
+      ret = _g_dbus_worker_flush_sync (connection->worker,
+                                       cancellable,
+                                       error);
+    }
+#ifdef G_OS_UNIX
+  else if (connection->kdbus_worker != NULL)
+    {
+      ret = _g_kdbus_worker_flush_sync (connection->kdbus_worker);
+    }
+#endif
+  else
+    g_assert_not_reached();
 
  out:
   return ret;
@@ -1443,10 +1484,21 @@ g_dbus_connection_close (GDBusConnection     *connection,
   if (!check_initialized (connection))
     return;
 
-  g_assert (connection->worker != NULL);
-
   task = g_task_new (connection, cancellable, callback, user_data);
-  _g_dbus_worker_close (connection->worker, task);
+
+  if (connection->worker)
+    {
+      _g_dbus_worker_close (connection->worker, task);
+    }
+#ifdef G_OS_UNIX
+  else if (connection->kdbus_worker)
+    {
+      _g_kdbus_worker_close (connection->kdbus_worker, task);
+    }
+#endif
+  else
+    g_assert_not_reached();
+
   g_object_unref (task);
 }
 
@@ -1545,6 +1597,628 @@ g_dbus_connection_close_sync (GDBusConnection  *connection,
 /* ---------------------------------------------------------------------------------------------------- */
 
 /**
+ * g_dbus_request_name:
+ * @connection: a #GDBusConnection
+ * @name: well-known bus name (name to request)
+ * @flags: a set of flags from the GBusNameOwnerFlags enumeration
+ * @error: return location for error or %NULL
+ *
+ * Synchronously acquires name on the bus and returns status code
+ * from the #GBusRequestNameReplyFlags enumeration.
+ *
+ * The calling thread is blocked until a reply is received.
+ *
+ * Returns: status code or %G_BUS_REQUEST_NAME_FLAGS_ERROR
+ *     if @error is set.
+ *
+ * Since: 2.44
+ */
+GBusRequestNameReplyFlags
+g_dbus_request_name (GDBusConnection     *connection,
+                     const gchar         *name,
+                     GBusNameOwnerFlags   flags,
+                     GError             **error)
+{
+  GVariant *result;
+  guint32 request_name_reply;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), G_BUS_RELEASE_NAME_FLAGS_ERROR);
+  g_return_val_if_fail (g_dbus_is_name (name) && !g_dbus_is_unique_name (name), G_BUS_RELEASE_NAME_FLAGS_ERROR);
+  g_return_val_if_fail (error == NULL || *error == NULL, G_BUS_RELEASE_NAME_FLAGS_ERROR);
+
+#ifdef G_OS_UNIX
+  if (connection->kdbus_worker)
+    return _g_kdbus_RequestName (connection->kdbus_worker, name, flags, error);
+#endif
+
+  result = g_dbus_connection_call_sync (connection, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                                        "org.freedesktop.DBus", "RequestName",
+                                        g_variant_new ("(su)", name, flags), G_VARIANT_TYPE ("(u)"),
+                                        G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+  if (result != NULL)
+    {
+      g_variant_get (result, "(u)", &request_name_reply);
+      g_variant_unref (result);
+    }
+  else
+    request_name_reply = G_BUS_REQUEST_NAME_FLAGS_ERROR;
+
+  return (GBusRequestNameReplyFlags) request_name_reply;
+}
+
+/**
+ * g_dbus_release_name:
+ * @connection: a #GDBusConnection
+ * @name: well-known bus name (name to release)
+ * @error: return location for error or %NULL
+ *
+ * Synchronously releases name on the bus and returns status code
+ * from the #GBusReleaseNameReplyFlags enumeration.
+ *
+ * The calling thread is blocked until a reply is received.
+ *
+ * Returns: status code or %G_BUS_RELEASE_NAME_FLAGS_ERROR
+ *     if @error is set.
+ *
+ * Since: 2.44
+ */
+GBusReleaseNameReplyFlags
+g_dbus_release_name (GDBusConnection  *connection,
+                     const gchar      *name,
+                     GError          **error)
+{
+  GVariant *result;
+  guint32 release_name_reply;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), G_BUS_RELEASE_NAME_FLAGS_ERROR);
+  g_return_val_if_fail (g_dbus_is_name (name) && !g_dbus_is_unique_name (name), G_BUS_RELEASE_NAME_FLAGS_ERROR);
+  g_return_val_if_fail (error == NULL || *error == NULL, G_BUS_RELEASE_NAME_FLAGS_ERROR);
+
+#ifdef G_OS_UNIX
+  if (connection->kdbus_worker)
+    return _g_kdbus_ReleaseName (connection->kdbus_worker, name, error);
+#endif
+
+  result = g_dbus_connection_call_sync (connection, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                                        "org.freedesktop.DBus", "ReleaseName",
+                                        g_variant_new ("(s)", name), G_VARIANT_TYPE ("(u)"),
+                                        G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+  if (result != NULL)
+    {
+      g_variant_get (result, "(u)", &release_name_reply);
+      g_variant_unref (result);
+    }
+  else
+    release_name_reply = G_BUS_RELEASE_NAME_FLAGS_ERROR;
+
+  return (GBusReleaseNameReplyFlags) release_name_reply;
+}
+
+/**
+ * g_dbus_add_match:
+ * @connection: a #GDBusConnection
+ * @match_rule: match rule to add to the @connection
+ * @error: return location for error or %NULL
+ *
+ * Synchronously adds a match rule to match messages.
+ *
+ * The calling thread is blocked until a reply is received.
+ *
+ * Returns: %TRUE if the operation succeeded, %FALSE
+ *     if @error is set.
+ *
+ * Since: 2.44
+ */
+gboolean
+g_dbus_add_match (GDBusConnection  *connection,
+                  const gchar      *match_rule,
+                  GError          **error)
+{
+  GVariant *result;
+  gboolean ret;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), FALSE);
+  g_return_val_if_fail (error == NULL || *error == NULL, FALSE);
+
+  result = NULL;
+  ret = FALSE;
+
+  if (match_rule[0] == '-')
+    return ret;
+
+#ifdef G_OS_UNIX
+  if (connection->kdbus_worker)
+    return _g_kdbus_AddMatch (connection->kdbus_worker, match_rule, error);
+#endif
+
+  result = g_dbus_connection_call_sync (connection, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                                        "org.freedesktop.DBus", "AddMatch",
+                                        g_variant_new ("(s)", match_rule), NULL,
+                                        G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+  if (result != NULL)
+    {
+      ret = TRUE;
+      g_variant_unref (result);
+    }
+
+  return ret;
+}
+
+/**
+ * g_dbus_remove_match:
+ * @connection: a #GDBusConnection
+ * @match_rule: match rule to remove from the @connection
+ * @error: return location for error or %NULL
+ *
+ * Synchronously removes the first rule that matches.
+ *
+ * The calling thread is blocked until a reply is received.
+ *
+ * Returns: %TRUE if the operation succeeded, %FALSE
+ *     if @error is set.
+ *
+ * Since: 2.44
+ */
+gboolean
+g_dbus_remove_match (GDBusConnection  *connection,
+                     const gchar      *match_rule,
+                     GError          **error)
+{
+  GVariant *result;
+  gboolean ret;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), FALSE);
+  g_return_val_if_fail (error == NULL || *error == NULL, FALSE);
+
+  result = NULL;
+  ret = FALSE;
+
+  if (match_rule[0] == '-')
+    return ret;
+
+#ifdef G_OS_UNIX
+  if (connection->kdbus_worker)
+    return _g_kdbus_RemoveMatch (connection->kdbus_worker, match_rule, error);
+#endif
+
+  result = g_dbus_connection_call_sync (connection, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                                        "org.freedesktop.DBus", "RemoveMatch",
+                                        g_variant_new ("(s)", match_rule), NULL,
+                                        G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+  if (result != NULL)
+    {
+      ret = TRUE;
+      g_variant_unref (result);
+    }
+
+  return ret;
+}
+
+/**
+ * g_dbus_get_bus_id:
+ * @connection: a #GDBusConnection
+ * @error: return location for error or %NULL
+ *
+ * Synchronously returns the unique ID of the bus.
+ *
+ * The calling thread is blocked until a reply is received.
+ *
+ * Returns: the unique ID of the bus or %NULL if @error is set.
+ *     Free with g_free().
+ *
+ * Since: 2.44
+ */
+gchar *
+g_dbus_get_bus_id (GDBusConnection  *connection,
+                   GError          **error)
+{
+  GVariant *result;
+  gchar *bus_id;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), NULL);
+  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
+
+  result = NULL;
+  bus_id = NULL;
+
+#ifdef G_OS_UNIX
+  if (connection->kdbus_worker)
+    return _g_kdbus_GetBusId (connection->kdbus_worker, error);
+#endif
+
+  result = g_dbus_connection_call_sync (connection, "org.freedesktop.DBus", "/",
+                                        "org.freedesktop.DBus", "GetId",
+                                        NULL, G_VARIANT_TYPE ("(s)"),
+                                        G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+  if (result != NULL)
+    {
+      g_variant_get (result, "(s)", &bus_id);
+      g_variant_unref (result);
+    }
+
+  return bus_id;
+}
+
+typedef enum
+{
+  LIST_NAMES,
+  LIST_ACTIVATABLE_NAMES,
+  LIST_QUEUED_OWNERS
+} GDBusListNameType;
+
+static gchar **
+_g_dbus_get_list_internal (GDBusConnection    *connection,
+                           const gchar        *name,
+                           GDBusListNameType   list_name_type,
+                           GError            **error)
+{
+  gchar **strv;
+  GVariant *result;
+  GVariantIter *iter;
+  gchar *str;
+  gsize n, i;
+
+  result = NULL;
+  strv = NULL;
+
+  if (list_name_type == LIST_QUEUED_OWNERS)
+    {
+#ifdef G_OS_UNIX
+      if (connection->kdbus_worker)
+        return _g_kdbus_GetListQueuedOwners (connection->kdbus_worker, name, error);
+#endif
+
+      result = g_dbus_connection_call_sync (connection, "org.freedesktop.DBus", "/",
+                                            "org.freedesktop.DBus", "ListQueuedOwners",
+                                            g_variant_new ("(s)", name), G_VARIANT_TYPE ("(as)"),
+                                            G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+    }
+  else
+    {
+      gchar *method_name;
+
+      if (list_name_type == LIST_NAMES)
+        method_name = "ListNames";
+      else
+        method_name = "ListActivatableNames";
+
+#ifdef G_OS_UNIX
+      if (connection->kdbus_worker)
+        return _g_kdbus_GetListNames (connection->kdbus_worker, list_name_type, error);
+#endif
+
+      result = g_dbus_connection_call_sync (connection, "org.freedesktop.DBus", "/",
+                                            "org.freedesktop.DBus", method_name,
+                                            NULL, G_VARIANT_TYPE ("(as)"),
+                                            G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+    }
+
+  if (result != NULL)
+    {
+      g_variant_get (result, "(as)", &iter);
+      n = g_variant_iter_n_children (iter);
+      strv = g_new (gchar *, n + 1);
+
+      i = 0;
+      while (g_variant_iter_loop (iter, "s", &str))
+        {
+          strv[i] = g_strdup (str);
+          i++;
+        }
+      strv[i] = NULL;
+
+      g_variant_iter_free (iter);
+      g_variant_unref (result);
+    }
+
+  return strv;
+}
+
+/**
+ * g_dbus_get_list_names:
+ * @connection: a #GDBusConnection
+ * @error: return location for error or %NULL
+ *
+ * Synchronously returns a list of all currently-owned names on the bus.
+ *
+ * The calling thread is blocked until a reply is received.
+ *
+ * Returns: a list of all currently-owned names on the bus or %NULL if
+ *     @error is set. Free with g_strfreev().
+ *
+ * Since: 2.44
+ */
+gchar **
+g_dbus_get_list_names (GDBusConnection  *connection,
+                       GError          **error)
+{
+  gchar **strv;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), NULL);
+  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
+
+  strv = _g_dbus_get_list_internal (connection, NULL, LIST_NAMES, error);
+
+  return strv;
+}
+
+/**
+ * g_dbus_get_list_activatable_names:
+ * @connection: a #GDBusConnection
+ * @error: return location for error or %NULL
+ *
+ * Synchronously returns a list of all names that can be activated on the bus.
+ *
+ * The calling thread is blocked until a reply is received.
+ *
+ * Returns: a list of all names that can be activated on the bus or %NULL if
+ *     @error is set. Free with g_strfreev().
+ *
+ * Since: 2.44
+ */
+gchar **
+g_dbus_get_list_activatable_names (GDBusConnection  *connection,
+                                   GError          **error)
+{
+  gchar **strv;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), NULL);
+  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
+
+  strv = _g_dbus_get_list_internal (connection, NULL, LIST_ACTIVATABLE_NAMES, error);
+
+  return strv;
+}
+
+/**
+ * g_dbus_get_list_queued_names:
+ * @connection: a #GDBusConnection
+ * @name: a unique or well-known bus name
+ * @error: return location for error or %NULL
+ *
+ * Synchronously returns the unique bus names of connections currently queued
+ * for the @name.
+ *
+ * If @name contains a value not compatible with the D-Bus syntax and naming
+ * conventions for bus names, the operation returns %NULL and @error is set.
+ *
+ * The calling thread is blocked until a reply is received.
+ *
+ * Returns: the unique bus names of connections currently queued for the @name
+ *     or %NULL if @error is set. Free with g_strfreev().
+ *
+ * Since: 2.44
+ */
+gchar **
+g_dbus_get_list_queued_owners (GDBusConnection  *connection,
+                               const gchar      *name,
+                               GError          **error)
+{
+  gchar **strv;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), NULL);
+  g_return_val_if_fail (name == NULL || g_dbus_is_name (name), NULL);
+  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
+
+  strv = _g_dbus_get_list_internal (connection, name, LIST_QUEUED_OWNERS, error);
+
+  return strv;
+}
+
+/**
+ * g_dbus_get_name_owner:
+ * @connection: a #GDBusConnection
+ * @name: well-known bus name to get the owner of
+ * @error: return location for error or %NULL
+ *
+ * Synchronously returns the unique connection name of the primary owner of
+ * the name given. If the requested name doesn't have an owner, an @error is
+ * returned.
+ *
+ * If @name contains a value not compatible with the D-Bus syntax and naming
+ * conventions for bus names, the operation returns %NULL and @error is set.
+ *
+ * The calling thread is blocked until a reply is received.
+ *
+ * Returns: the unique connection name of the primary owner of the
+ *     name given. If the requested name doesn't have an owner, function
+ *     returns %NULL and @error is set. Free with g_free().
+ *
+ * Since: 2.44
+ */
+gchar *
+g_dbus_get_name_owner (GDBusConnection  *connection,
+                       const gchar      *name,
+                       GError          **error)
+{
+  GVariant *result;
+  gchar *name_owner;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), NULL);
+  g_return_val_if_fail (name == NULL || g_dbus_is_name (name), NULL);
+  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
+
+  name_owner = NULL;
+  result = NULL;
+
+#ifdef G_OS_UNIX
+  if (connection->kdbus_worker)
+    return _g_kdbus_GetNameOwner (connection->kdbus_worker, name, error);
+#endif
+
+  result = g_dbus_connection_call_sync (connection, "org.freedesktop.DBus", "/",
+                                        "org.freedesktop.DBus", "GetNameOwner",
+                                        g_variant_new ("(s)", name), G_VARIANT_TYPE ("(s)"),
+                                        G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+  if (result != NULL)
+    {
+      g_variant_get (result, "(s)", &name_owner);
+      g_variant_unref (result);
+    }
+  else
+    name_owner = NULL;
+
+  return name_owner;
+}
+
+/**
+ * g_dbus_get_connection_pid:
+ * @connection: a #GDBusConnection
+ * @name: a unique or well-known bus name of the connection to query
+ * @error: return location for error or %NULL
+ *
+ * Synchronously returns the Unix process ID of the process connected to the
+ * bus. If unable to determine it, an @error is returned.
+ *
+ * If @name contains a value not compatible with the D-Bus syntax and naming
+ * conventions for bus names, the operation returns -1 and @error is set.
+ *
+ * The calling thread is blocked until a reply is received.
+ *
+ * Returns: the Unix process ID of the process connected to the bus or -1
+ *     if @error is set.
+ *
+ * Since: 2.44
+ */
+pid_t
+g_dbus_get_connection_pid (GDBusConnection  *connection,
+                           const gchar      *name,
+                           GError          **error)
+{
+  GVariant *result;
+  pid_t pid;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), -1);
+  g_return_val_if_fail (name == NULL || g_dbus_is_name (name), -1);
+  g_return_val_if_fail (error == NULL || *error == NULL, -1);
+
+  result = NULL;
+  pid = -1;
+
+#ifdef G_OS_UNIX
+  if (connection->kdbus_worker)
+    return _g_kdbus_GetConnectionUnixProcessID (connection->kdbus_worker, name, error);
+#endif
+
+  result = g_dbus_connection_call_sync (connection, "org.freedesktop.DBus", "/",
+                                        "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+                                        g_variant_new ("(s)", name), G_VARIANT_TYPE ("(u)"),
+                                        G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+  if (result != NULL)
+    {
+      g_variant_get (result, "(u)", &pid);
+      g_variant_unref (result);
+    }
+
+  return pid;
+}
+
+/**
+ * g_dbus_get_connection_uid:
+ * @connection: a #GDBusConnection
+ * @name: a unique or well-known bus name of the connection to query
+ * @error: return location for error or %NULL
+ *
+ * Synchronously returns the Unix user ID of the process connected to the
+ * bus. If unable to determine it, an @error is returned.
+ *
+ * If @name contains a value not compatible with the D-Bus syntax and naming
+ * conventions for bus names, the operation returns -1 and @error is set.
+ *
+ * The calling thread is blocked until a reply is received.
+ *
+ * Returns: the Unix user ID of the process connected to the bus or -1
+ *     if @error is set.
+ *
+ * Since: 2.44
+ */
+uid_t
+g_dbus_get_connection_uid (GDBusConnection  *connection,
+                           const gchar      *name,
+                           GError          **error)
+{
+  GVariant *result;
+  uid_t uid;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), -1);
+  g_return_val_if_fail (name == NULL || g_dbus_is_name (name), -1);
+  g_return_val_if_fail (error == NULL || *error == NULL, -1);
+
+  result = NULL;
+  uid = -1;
+
+#ifdef G_OS_UNIX
+  if (connection->kdbus_worker)
+    return _g_kdbus_GetConnectionUnixUser (connection->kdbus_worker, name, error);
+#endif
+
+  result = g_dbus_connection_call_sync (connection, "org.freedesktop.DBus", "/",
+                                        "org.freedesktop.DBus", "GetConnectionUnixUser",
+                                        g_variant_new ("(s)", name), G_VARIANT_TYPE ("(u)"),
+                                        G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+  if (result != NULL)
+    {
+      g_variant_get (result, "(u)", &uid);
+      g_variant_unref (result);
+    }
+
+  return uid;
+}
+
+/**
+ * g_dbus_start_service_by_name:
+ * @connection: a #GDBusConnection
+ * @name: name of the service to start
+ * @flags: (currently not used)
+ * @error: return location for error or %NULL
+ *
+ * Synchronously tries to launch the executable associated
+ * with a @name.
+ *
+ * The calling thread is blocked until a reply is received.
+ *
+ * Returns: status code or %G_BUS_START_SERVICE_REPLY_ERROR
+ *     if @error is set.
+ *
+ * Since: 2.44
+ */
+GBusStartServiceReplyFlags
+g_dbus_start_service_by_name (GDBusConnection  *connection,
+                              const gchar      *name,
+                              guint32           flags,
+                              GError          **error)
+{
+  GVariant *result;
+  guint32 ret;
+
+  g_return_val_if_fail (G_IS_DBUS_CONNECTION (connection), -1);
+  g_return_val_if_fail (name == NULL || g_dbus_is_name (name), -1);
+  g_return_val_if_fail (error == NULL || *error == NULL, -1);
+
+  result = NULL;
+  ret = G_BUS_START_SERVICE_REPLY_ERROR;
+
+#ifdef G_OS_UNIX
+  if (connection->kdbus_worker)
+    return _g_kdbus_StartServiceByName (connection->kdbus_worker, name, flags, error);
+#endif
+
+  result = g_dbus_connection_call_sync (connection, "org.freedesktop.DBus", "/",
+                                        "org.freedesktop.DBus", "StartServiceByName",
+                                        g_variant_new ("(su)", name, flags), G_VARIANT_TYPE ("(u)"),
+                                        G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+  if (result != NULL)
+    {
+      g_variant_get (result, "(u)", &ret);
+      g_variant_unref (result);
+    }
+
+  return (GBusStartServiceReplyFlags) ret;
+}
+
+/* ---------------------------------------------------------------------------------------------------- */
+
+/**
  * g_dbus_connection_get_last_serial:
  * @connection: a #GDBusConnection
  *
@@ -1612,30 +2286,38 @@ g_dbus_connection_send_message_unlocked (GDBusConnection   *connection,
                        error))
     goto out;
 
-  blob = g_dbus_message_to_blob (message,
-                                 &blob_size,
-                                 connection->capabilities,
-                                 error);
-  if (blob == NULL)
-    goto out;
+  if (!(flags & G_DBUS_SEND_MESSAGE_FLAGS_PRESERVE_SERIAL))
+    g_dbus_message_set_serial (message, ++connection->last_serial);
 
-  if (flags & G_DBUS_SEND_MESSAGE_FLAGS_PRESERVE_SERIAL)
-    serial_to_use = g_dbus_message_get_serial (message);
-  else
-    serial_to_use = ++connection->last_serial; /* TODO: handle overflow */
+  serial_to_use = g_dbus_message_get_serial (message);
 
-  switch (blob[0])
+  /*
+   * serializes message to a blob
+   */
+  if (connection->worker)
     {
-    case 'l':
-      ((guint32 *) blob)[2] = GUINT32_TO_LE (serial_to_use);
-      break;
-    case 'B':
-      ((guint32 *) blob)[2] = GUINT32_TO_BE (serial_to_use);
-      break;
-    default:
-      g_assert_not_reached ();
-      break;
+      blob = g_dbus_message_to_blob (message,
+                                     &blob_size,
+                                     connection->capabilities,
+                                     error);
+      if (blob == NULL)
+        goto out;
+
+      switch (blob[0])
+        {
+        case 'l':
+          ((guint32 *) blob)[2] = GUINT32_TO_LE (serial_to_use);
+          break;
+        case 'B':
+          ((guint32 *) blob)[2] = GUINT32_TO_BE (serial_to_use);
+          break;
+        default:
+          g_assert_not_reached ();
+          break;
+        }
     }
+
+  g_dbus_message_lock (message);
 
 #if 0
   g_printerr ("Writing message of %" G_GSIZE_FORMAT " bytes (serial %d) on %p:\n",
@@ -1659,17 +2341,25 @@ g_dbus_connection_send_message_unlocked (GDBusConnection   *connection,
                         g_thread_self (),
                         GUINT_TO_POINTER (serial_to_use));
 
-  if (!(flags & G_DBUS_SEND_MESSAGE_FLAGS_PRESERVE_SERIAL))
-    g_dbus_message_set_serial (message, serial_to_use);
-
-  g_dbus_message_lock (message);
-  _g_dbus_worker_send_message (connection->worker,
-                               message,
-                               (gchar*) blob,
-                               blob_size);
-  blob = NULL; /* since _g_dbus_worker_send_message() steals the blob */
-
   ret = TRUE;
+
+  if (connection->worker)
+    {
+      _g_dbus_worker_send_message (connection->worker,
+                                   message,
+                                   (gchar*) blob,
+                                   blob_size);
+    }
+#ifdef G_OS_UNIX
+  else if (connection->kdbus_worker)
+    {
+      ret = _g_kdbus_worker_send_message (connection->kdbus_worker, message, -1, error);
+    }
+#endif
+  else
+    g_assert_not_reached ();
+
+  blob = NULL; /* since _g_dbus_worker_send_message() steals the blob */
 
  out:
   g_free (blob);
@@ -2130,32 +2820,96 @@ g_dbus_connection_send_message_with_reply_sync (GDBusConnection        *connecti
   g_return_val_if_fail (timeout_msec >= 0 || timeout_msec == -1, NULL);
   g_return_val_if_fail (error == NULL || *error == NULL, NULL);
 
-  data.res = NULL;
-  data.context = g_main_context_new ();
-  data.loop = g_main_loop_new (data.context, FALSE);
+  reply = NULL;
 
-  g_main_context_push_thread_default (data.context);
+  if (connection->worker)
+    {
+      data.res = NULL;
+      data.context = g_main_context_new ();
+      data.loop = g_main_loop_new (data.context, FALSE);
 
-  g_dbus_connection_send_message_with_reply (connection,
-                                             message,
-                                             flags,
-                                             timeout_msec,
-                                             out_serial,
-                                             cancellable,
-                                             (GAsyncReadyCallback) send_message_with_reply_sync_cb,
-                                             &data);
-  g_main_loop_run (data.loop);
-  reply = g_dbus_connection_send_message_with_reply_finish (connection,
-                                                            data.res,
-                                                            error);
+      g_main_context_push_thread_default (data.context);
 
-  g_main_context_pop_thread_default (data.context);
+      g_dbus_connection_send_message_with_reply (connection,
+                                                 message,
+                                                 flags,
+                                                 timeout_msec,
+                                                 out_serial,
+                                                 cancellable,
+                                                 (GAsyncReadyCallback) send_message_with_reply_sync_cb,
+                                                 &data);
+      g_main_loop_run (data.loop);
+      reply = g_dbus_connection_send_message_with_reply_finish (connection,
+                                                                data.res,
+                                                                error);
 
-  g_main_context_unref (data.context);
-  g_main_loop_unref (data.loop);
-  if (data.res)
-    g_object_unref (data.res);
+      g_main_context_pop_thread_default (data.context);
 
+      g_main_context_unref (data.context);
+      g_main_loop_unref (data.loop);
+      if (data.res)
+        g_object_unref (data.res);
+    }
+#ifdef G_OS_UNIX
+  else if (connection->kdbus_worker)
+    {
+      /* kdbus supports blocking synchronous calls, so let's use them instead of mainloops */
+
+      volatile guint32 serial;
+      guint32 serial_to_use;
+
+      CONNECTION_LOCK (connection);
+
+      if (timeout_msec == -1)
+        timeout_msec = 25 * 1000;
+
+      if (out_serial == NULL)
+        out_serial = &serial;
+      else
+        *out_serial = 0;
+
+      /*
+       * Check that we never actually send a message if the GCancellable
+       * is already cancelled
+       */
+      if (g_cancellable_is_cancelled (cancellable))
+        {
+          g_set_error_literal (error,
+                               G_IO_ERROR,
+                               G_IO_ERROR_CANCELLED,
+                               _("Operation was cancelled"));
+          CONNECTION_UNLOCK (connection);
+          goto out;
+        }
+
+      if (!check_unclosed (connection,
+                           (flags & SEND_MESSAGE_FLAGS_INITIALIZING) ? MAY_BE_UNINITIALIZED : 0,
+                           error))
+        {
+          CONNECTION_UNLOCK (connection);
+          goto out;
+        }
+
+      if (!(flags & G_DBUS_SEND_MESSAGE_FLAGS_PRESERVE_SERIAL))
+        g_dbus_message_set_serial (message, ++connection->last_serial);
+
+      serial_to_use = g_dbus_message_get_serial (message);
+
+      g_dbus_message_lock (message);
+
+      if (out_serial != NULL)
+        *out_serial = serial_to_use;
+
+      _g_kdbus_worker_send_message_sync (connection->kdbus_worker, message,
+                                         &reply, timeout_msec, cancellable, error);
+
+      CONNECTION_UNLOCK (connection);
+    }
+#endif /* G_OS_UNIX */
+  else
+    g_assert_not_reached ();
+
+out:
   return reply;
 }
 
@@ -2212,8 +2966,7 @@ free_filter_list (FilterData **filters)
 
 /* Called in GDBusWorker's thread - we must not block - with no lock held */
 static void
-on_worker_message_received (GDBusWorker  *worker,
-                            GDBusMessage *message,
+on_worker_message_received (GDBusMessage *message,
                             gpointer      user_data)
 {
   GDBusConnection *connection;
@@ -2232,7 +2985,23 @@ on_worker_message_received (GDBusWorker  *worker,
   g_object_ref (connection);
   G_UNLOCK (message_bus_lock);
 
-  //g_debug ("in on_worker_message_received");
+#ifdef G_OS_UNIX
+  if (_g_dbus_connection_is_kdbus (connection))
+    {
+      if (G_UNLIKELY (_g_dbus_debug_message ()))
+        {
+          gchar *s;
+          _g_dbus_debug_print_lock ();
+          g_print ("========================================================================\n"
+                   "GDBus-debug:Message:\n"
+                   "  <<<< RECEIVED D-Bus message\n");
+          s = g_dbus_message_print (message, 2);
+          g_print ("%s", s);
+          g_free (s);
+          _g_dbus_debug_print_unlock ();
+        }
+    }
+#endif
 
   g_object_ref (message);
   g_dbus_message_lock (message);
@@ -2309,8 +3078,7 @@ on_worker_message_received (GDBusWorker  *worker,
 
 /* Called in GDBusWorker's thread, lock is not held */
 static GDBusMessage *
-on_worker_message_about_to_be_sent (GDBusWorker  *worker,
-                                    GDBusMessage *message,
+on_worker_message_about_to_be_sent (GDBusMessage *message,
                                     gpointer      user_data)
 {
   GDBusConnection *connection;
@@ -2382,10 +3150,9 @@ cancel_method_on_close (gpointer key, gpointer value, gpointer user_data)
 
 /* Called in GDBusWorker's thread - we must not block - without lock held */
 static void
-on_worker_closed (GDBusWorker *worker,
-                  gboolean     remote_peer_vanished,
-                  GError      *error,
-                  gpointer     user_data)
+on_worker_closed (gboolean  remote_peer_vanished,
+                  GError   *error,
+                  gpointer  user_data)
 {
   GDBusConnection *connection;
   gboolean alive;
@@ -2447,6 +3214,7 @@ initable_init (GInitable     *initable,
                GError       **error)
 {
   GDBusConnection *connection = G_DBUS_CONNECTION (initable);
+  gboolean initially_frozen;
   gboolean ret;
 
   /* This method needs to be idempotent to work with the singleton
@@ -2484,6 +3252,8 @@ initable_init (GInitable     *initable,
    */
   if (connection->address != NULL)
     {
+      GObject *ret;
+
       g_assert (connection->stream == NULL);
 
       if ((connection->flags & G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_SERVER) ||
@@ -2496,12 +3266,20 @@ initable_init (GInitable     *initable,
           goto out;
         }
 
-      connection->stream = g_dbus_address_get_stream_sync (connection->address,
-                                                           NULL, /* TODO: out_guid */
-                                                           cancellable,
-                                                           &connection->initialization_error);
-      if (connection->stream == NULL)
+      ret = g_dbus_address_get_stream_internal (connection->address, TRUE,
+                                                NULL, /* TODO: out_guid */
+                                                cancellable, &connection->initialization_error);
+      if (ret == NULL)
         goto out;
+
+      if (G_IS_IO_STREAM (ret))
+        connection->stream = G_IO_STREAM (ret);
+#ifdef G_OS_UNIX
+      else if (G_IS_KDBUS_WORKER (ret))
+        connection->kdbus_worker = G_KDBUS_WORKER (ret);
+#endif
+      else
+        g_assert_not_reached ();
     }
   else if (connection->stream != NULL)
     {
@@ -2511,6 +3289,16 @@ initable_init (GInitable     *initable,
     {
       g_assert_not_reached ();
     }
+
+#ifdef G_OS_UNIX
+  /* Skip authentication process for kdbus transport */
+  if (connection->kdbus_worker)
+    {
+      /* kdbus connection always supports exchanging UNIX file descriptors with the remote peer */
+      connection->capabilities |= G_DBUS_CAPABILITY_FLAGS_UNIX_FD_PASSING;
+      goto authenticated;
+    }
+#endif
 
   /* Authenticate the connection */
   if (connection->flags & G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_SERVER)
@@ -2550,6 +3338,8 @@ initable_init (GInitable     *initable,
       connection->authentication_observer = NULL;
     }
 
+authenticated:
+
   //g_output_stream_flush (G_SOCKET_CONNECTION (connection->stream)
 
   //g_debug ("haz unix fd passing powers: %d", connection->capabilities & G_DBUS_CAPABILITY_FLAGS_UNIX_FD_PASSING);
@@ -2570,13 +3360,32 @@ initable_init (GInitable     *initable,
   g_hash_table_insert (alive_connections, connection, connection);
   G_UNLOCK (message_bus_lock);
 
-  connection->worker = _g_dbus_worker_new (connection->stream,
-                                           connection->capabilities,
-                                           ((connection->flags & G_DBUS_CONNECTION_FLAGS_DELAY_MESSAGE_PROCESSING) != 0),
-                                           on_worker_message_received,
-                                           on_worker_message_about_to_be_sent,
-                                           on_worker_closed,
-                                           connection);
+  initially_frozen = (connection->flags & G_DBUS_CONNECTION_FLAGS_DELAY_MESSAGE_PROCESSING) != 0;
+
+  if (0)
+    {
+    }
+#ifdef G_OS_UNIX
+  else if (connection->kdbus_worker)
+    {
+      _g_kdbus_worker_associate (connection->kdbus_worker,
+                                 connection->capabilities,
+                                 on_worker_message_received,
+                                 on_worker_message_about_to_be_sent,
+                                 on_worker_closed,
+                                 connection);
+    }
+#endif
+  else
+    {
+      connection->worker = _g_dbus_worker_new (connection->stream,
+                                               connection->capabilities,
+                                               initially_frozen,
+                                               on_worker_message_received,
+                                               on_worker_message_about_to_be_sent,
+                                               on_worker_closed,
+                                               connection);
+    }
 
   /* if a bus connection, call org.freedesktop.DBus.Hello - this is how we're getting a name */
   if (connection->flags & G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION)
@@ -2593,24 +3402,45 @@ initable_init (GInitable     *initable,
           goto out;
         }
 
-      hello_result = g_dbus_connection_call_sync (connection,
-                                                  "org.freedesktop.DBus", /* name */
-                                                  "/org/freedesktop/DBus", /* path */
-                                                  "org.freedesktop.DBus", /* interface */
-                                                  "Hello",
-                                                  NULL, /* parameters */
-                                                  G_VARIANT_TYPE ("(s)"),
-                                                  CALL_FLAGS_INITIALIZING,
-                                                  -1,
-                                                  NULL, /* TODO: cancellable */
-                                                  &connection->initialization_error);
-      if (hello_result == NULL)
-        goto out;
+      if (connection->worker)
+        {
+          hello_result = g_dbus_connection_call_sync (connection,
+                                                      "org.freedesktop.DBus", /* name */
+                                                      "/org/freedesktop/DBus", /* path */
+                                                      "org.freedesktop.DBus", /* interface */
+                                                      "Hello",
+                                                      NULL, /* parameters */
+                                                      G_VARIANT_TYPE ("(s)"),
+                                                      CALL_FLAGS_INITIALIZING,
+                                                      -1,
+                                                      NULL, /* TODO: cancellable */
+                                                      &connection->initialization_error);
+          if (hello_result == NULL)
+            goto out;
 
-      g_variant_get (hello_result, "(s)", &connection->bus_unique_name);
-      g_variant_unref (hello_result);
-      //g_debug ("unique name is '%s'", connection->bus_unique_name);
+          g_variant_get (hello_result, "(s)", &connection->bus_unique_name);
+          g_variant_unref (hello_result);
+        }
+#ifdef G_OS_UNIX
+      else if (connection->kdbus_worker)
+        {
+          const gchar *unique_name;
+
+          unique_name = _g_kdbus_Hello (connection->kdbus_worker, &connection->initialization_error);
+          if (unique_name == NULL)
+            goto out;
+
+          connection->bus_unique_name = g_strdup (unique_name);
+        }
+#endif
+      else
+        g_assert_not_reached ();
     }
+
+#ifdef G_OS_UNIX
+  if (connection->kdbus_worker && !initially_frozen)
+    _g_kdbus_worker_unfreeze (connection->kdbus_worker);
+#endif
 
   ret = TRUE;
  out:
@@ -3497,8 +4327,34 @@ g_dbus_connection_signal_subscribe (GDBusConnection     *connection,
    */
   if (connection->flags & G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION)
     {
-      if (!is_signal_data_for_name_lost_or_acquired (signal_data))
-        add_match_rule (connection, signal_data->rule);
+      if (connection->worker)
+        {
+          if (!is_signal_data_for_name_lost_or_acquired (signal_data))
+            add_match_rule (connection, signal_data->rule);
+        }
+#ifdef G_OS_UNIX
+      else if (connection->kdbus_worker)
+        {
+          if (g_strcmp0 (signal_data->sender_unique_name, "org.freedesktop.DBus") == 0 &&
+              g_strcmp0 (signal_data->interface_name, "org.freedesktop.DBus") == 0 &&
+              g_strcmp0 (signal_data->object_path, "/org/freedesktop/DBus") == 0 &&
+              (g_strcmp0 (signal_data->member, "NameLost") == 0 ||
+               g_strcmp0 (signal_data->member, "NameAcquired") == 0 ||
+               g_strcmp0 (signal_data->member, "NameOwnerChanged") == 0))
+            {
+              if (g_strcmp0 (signal_data->member, "NameAcquired") == 0)
+                _g_kdbus_subscribe_name_acquired (connection->kdbus_worker, signal_data->rule, arg0, NULL);
+              else if (g_strcmp0 (signal_data->member, "NameLost") == 0)
+                _g_kdbus_subscribe_name_lost (connection->kdbus_worker, signal_data->rule, arg0, NULL);
+              else if (g_strcmp0 (signal_data->member, "NameOwnerChanged") == 0)
+                _g_kdbus_subscribe_name_owner_changed (connection->kdbus_worker, signal_data->rule, arg0, NULL);
+            }
+          else
+            _g_kdbus_AddMatch (connection->kdbus_worker, signal_data->rule, NULL);
+        }
+#endif
+      else
+        g_assert_not_reached ();
     }
 
   signal_data_array = g_hash_table_lookup (connection->map_sender_unique_name_to_signal_data_array,
@@ -3573,7 +4429,6 @@ unsubscribe_id_internal (GDBusConnection *connection,
 
           /* remove the match rule from the bus unless NameLost or NameAcquired (see subscribe()) */
           if ((connection->flags & G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION) &&
-              !is_signal_data_for_name_lost_or_acquired (signal_data) &&
               !g_dbus_connection_is_closed (connection) &&
               !connection->finalizing)
             {
@@ -3583,7 +4438,19 @@ unsubscribe_id_internal (GDBusConnection *connection,
                * so on_worker_closed() can't happen between the check we just
                * did, and releasing the lock later.
                */
-              remove_match_rule (connection, signal_data->rule);
+              if (connection->worker)
+                {
+                  if (!is_signal_data_for_name_lost_or_acquired (signal_data))
+                    remove_match_rule (connection, signal_data->rule);
+                }
+#ifdef G_OS_UNIX
+              else if (connection->kdbus_worker)
+                {
+                  _g_kdbus_RemoveMatch (connection->kdbus_worker, signal_data->rule, NULL);
+                }
+#endif
+              else
+                g_assert_not_reached ();
             }
 
           signal_data_free (signal_data);
@@ -3676,7 +4543,7 @@ emit_signal_instance_in_idle_cb (gpointer data)
     }
   else
     {
-      g_variant_ref_sink (parameters);
+      g_variant_ref (parameters);
     }
 
 #if 0

@@ -1096,7 +1096,6 @@ subscribe_signals (GDBusObjectManagerClient *manager,
                    const gchar *name_owner)
 {
   GError *error = NULL;
-  GVariant *ret;
 
   g_return_if_fail (G_IS_DBUS_OBJECT_MANAGER_CLIENT (manager));
   g_return_if_fail (manager->priv->signal_subscription_id == 0);
@@ -1122,22 +1121,7 @@ subscribe_signals (GDBusObjectManagerClient *manager,
 
       /* The bus daemon may not implement path_namespace so gracefully
        * handle this by using a fallback triggered if @error is set. */
-      ret = g_dbus_connection_call_sync (manager->priv->connection,
-                                         "org.freedesktop.DBus",
-                                         "/org/freedesktop/DBus",
-                                         "org.freedesktop.DBus",
-                                         "AddMatch",
-                                         g_variant_new ("(s)",
-                                                        manager->priv->match_rule),
-                                         NULL, /* reply_type */
-                                         G_DBUS_CALL_FLAGS_NONE,
-                                         -1, /* default timeout */
-                                         NULL, /* TODO: Cancellable */
-                                         &error);
-
-      /* yay, bus daemon supports path_namespace */
-      if (ret != NULL)
-        g_variant_unref (ret);
+      g_dbus_add_match (manager->priv->connection, manager->priv->match_rule, &error);
     }
 
   if (error == NULL)
@@ -1207,19 +1191,9 @@ maybe_unsubscribe_signals (GDBusObjectManagerClient *manager)
       /* Since the AddMatch call succeeded this is guaranteed to not
        * fail - therefore, don't bother checking the return value
        */
-      g_dbus_connection_call (manager->priv->connection,
-                              "org.freedesktop.DBus",
-                              "/org/freedesktop/DBus",
-                              "org.freedesktop.DBus",
-                              "RemoveMatch",
-                              g_variant_new ("(s)",
-                                             manager->priv->match_rule),
-                              NULL, /* reply_type */
-                              G_DBUS_CALL_FLAGS_NONE,
-                              -1, /* default timeout */
-                              NULL, /* GCancellable */
-                              NULL, /* GAsyncReadyCallback */
-                              NULL); /* user data */
+      g_dbus_remove_match (manager->priv->connection,
+                           manager->priv->match_rule,
+                           NULL);
       g_free (manager->priv->match_rule);
       manager->priv->match_rule = NULL;
     }

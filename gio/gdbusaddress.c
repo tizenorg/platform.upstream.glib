@@ -46,6 +46,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <gio/gunixsocketaddress.h>
+#include "gkdbus.h"
 #endif
 
 #ifdef G_OS_WIN32
@@ -526,8 +527,9 @@ out:
 
 /* ---------------------------------------------------------------------------------------------------- */
 
-static GIOStream *
+static GObject *
 g_dbus_address_try_connect_one (const gchar   *address_entry,
+                                gboolean       kdbus_okay,
                                 gchar        **out_guid,
                                 GCancellable  *cancellable,
                                 GError       **error);
@@ -537,14 +539,15 @@ g_dbus_address_try_connect_one (const gchar   *address_entry,
  * point. That way we can implement a D-Bus transport over X11 without
  * making libgio link to libX11...
  */
-static GIOStream *
+static GObject *
 g_dbus_address_connect (const gchar   *address_entry,
                         const gchar   *transport_name,
+                        gboolean       kdbus_okay,
                         GHashTable    *key_value_pairs,
                         GCancellable  *cancellable,
                         GError       **error)
 {
-  GIOStream *ret;
+  GObject *ret;
   GSocketConnectable *connectable;
   const gchar *nonce_file;
 
@@ -556,6 +559,29 @@ g_dbus_address_connect (const gchar   *address_entry,
     {
     }
 #ifdef G_OS_UNIX
+  else if (kdbus_okay && g_str_equal (transport_name, "kernel"))
+    {
+      GKDBusWorker *worker;
+      const gchar *path;
+
+      path = g_hash_table_lookup (key_value_pairs, "path");
+
+      if (path == NULL)
+        {
+          g_set_error (error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT,
+                       _("Error in address '%s' - the kernel transport requires a path"),
+                       address_entry);
+        }
+      else
+        {
+          worker = _g_kdbus_worker_new (path, error);
+
+          if (worker == NULL)
+            return NULL;
+
+          return G_OBJECT (worker);
+        }
+    }
   else if (g_strcmp0 (transport_name, "unix") == 0)
     {
       const gchar *path;
@@ -646,7 +672,7 @@ g_dbus_address_connect (const gchar   *address_entry,
       autolaunch_address = get_session_address_dbus_launch (error);
       if (autolaunch_address != NULL)
         {
-          ret = g_dbus_address_try_connect_one (autolaunch_address, NULL, cancellable, error);
+          ret = g_dbus_address_try_connect_one (autolaunch_address, kdbus_okay, NULL, cancellable, error);
           g_free (autolaunch_address);
           goto out;
         }
@@ -681,7 +707,7 @@ g_dbus_address_connect (const gchar   *address_entry,
       if (connection == NULL)
         goto out;
 
-      ret = G_IO_STREAM (connection);
+      ret = G_OBJECT (connection);
 
       if (nonce_file != NULL)
         {
@@ -734,7 +760,7 @@ g_dbus_address_connect (const gchar   *address_entry,
             }
           fclose (f);
 
-          if (!g_output_stream_write_all (g_io_stream_get_output_stream (ret),
+          if (!g_output_stream_write_all (g_io_stream_get_output_stream (G_IO_STREAM (connection)),
                                           nonce_contents,
                                           16,
                                           NULL,
@@ -754,13 +780,14 @@ g_dbus_address_connect (const gchar   *address_entry,
   return ret;
 }
 
-static GIOStream *
+static GObject *
 g_dbus_address_try_connect_one (const gchar   *address_entry,
+                                gboolean       kdbus_okay,
                                 gchar        **out_guid,
                                 GCancellable  *cancellable,
                                 GError       **error)
 {
-  GIOStream *ret;
+  GObject *ret;
   GHashTable *key_value_pairs;
   gchar *transport_name;
   const gchar *guid;
@@ -777,6 +804,7 @@ g_dbus_address_try_connect_one (const gchar   *address_entry,
 
   ret = g_dbus_address_connect (address_entry,
                                 transport_name,
+                                kdbus_okay,
                                 key_value_pairs,
                                 cancellable,
                                 error);
@@ -931,7 +959,25 @@ g_dbus_address_get_stream_sync (const gchar   *address,
                                 GCancellable  *cancellable,
                                 GError       **error)
 {
-  GIOStream *ret;
+  GObject *result;
+
+  result = g_dbus_address_get_stream_internal (address, FALSE, out_guid, cancellable, error);
+  g_assert (result == NULL || G_IS_IO_STREAM (result));
+
+  if (result)
+    return G_IO_STREAM (result);
+
+  return NULL;
+}
+
+GObject *
+g_dbus_address_get_stream_internal (const gchar   *address,
+                                    gboolean       kdbus_okay,
+                                    gchar        **out_guid,
+                                    GCancellable  *cancellable,
+                                    GError       **error)
+{
+  GObject *ret;
   gchar **addr_array;
   guint n;
   GError *last_error;
@@ -958,6 +1004,7 @@ g_dbus_address_get_stream_sync (const gchar   *address,
 
       this_error = NULL;
       ret = g_dbus_address_try_connect_one (addr,
+                                            kdbus_okay,
                                             out_guid,
                                             cancellable,
                                             &this_error);
@@ -1561,11 +1608,11 @@ g_dbus_address_get_for_bus_sync (GBusType       bus_type,
   if (G_UNLIKELY (_g_dbus_debug_address ()))
     {
       guint n;
+      gchar *s;
       _g_dbus_debug_print_lock ();
       s = _g_dbus_enum_to_string (G_TYPE_BUS_TYPE, bus_type);
-      g_print ("GDBus-debug:Address: In g_dbus_address_get_for_bus_sync() for bus type '%s'\n",
-               s);
-      g_free (s);
+      g_print ("GDBus-debug:Address: In g_dbus_address_get_for_bus_sync() for bus type '%s'\n", s);
+      g_free(s);
       for (n = 0; n < 3; n++)
         {
           const gchar *k;
@@ -1593,7 +1640,7 @@ g_dbus_address_get_for_bus_sync (GBusType       bus_type,
       ret = g_strdup (g_getenv ("DBUS_SYSTEM_BUS_ADDRESS"));
       if (ret == NULL)
         {
-          ret = g_strdup ("unix:path=/var/run/dbus/system_bus_socket");
+          ret = g_strdup ("kernel:path=/sys/fs/kdbus/0-system/bus;unix:path=/var/run/dbus/system_bus_socket");
         }
       break;
 
@@ -1601,7 +1648,10 @@ g_dbus_address_get_for_bus_sync (GBusType       bus_type,
       ret = g_strdup (g_getenv ("DBUS_SESSION_BUS_ADDRESS"));
       if (ret == NULL)
         {
-          ret = get_session_address_platform_specific (&local_error);
+          gchar *s;
+          s = get_session_address_platform_specific (&local_error);
+          ret = g_strdup_printf ("kernel:path=/sys/fs/kdbus/%d-user/bus;%s", getuid(), s);
+          g_free(s);
         }
       break;
 
@@ -1655,13 +1705,16 @@ g_dbus_address_get_for_bus_sync (GBusType       bus_type,
       s = _g_dbus_enum_to_string (G_TYPE_BUS_TYPE, bus_type);
       if (ret != NULL)
         {
-          g_print ("GDBus-debug:Address: Returning address '%s' for bus type '%s'\n",
-                   ret, s);
+          gchar *s = _g_dbus_enum_to_string (G_TYPE_BUS_TYPE, bus_type);
+          g_print ("GDBus-debug:Address: Returning address '%s' for bus type '%s'\n", ret, s);
+	  g_free(s);
         }
       else
         {
-          g_print ("GDBus-debug:Address: Cannot look-up address bus type '%s': %s\n",
-                   s, local_error ? local_error->message : "");
+          gchar *s = _g_dbus_enum_to_string (G_TYPE_BUS_TYPE, bus_type);
+          g_print ("GDBus-debug:Address: Cannot look-up address bus type '%s': %s\n", s, 
+                   local_error ? local_error->message : "");
+          g_free(s);
         }
       g_free (s);
       _g_dbus_debug_print_unlock ();

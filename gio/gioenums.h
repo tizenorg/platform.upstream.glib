@@ -952,6 +952,7 @@ typedef enum
  * @G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT: Allow another message bus connection to claim the name.
  * @G_BUS_NAME_OWNER_FLAGS_REPLACE: If another message bus connection owns the name and have
  * specified #G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT, then take the name from the other connection.
+ * @G_BUS_NAME_OWNER_FLAGS_DO_NOT_QUEUE: Do not place message bus connection in a queue to own the name.
  *
  * Flags used in g_bus_own_name().
  *
@@ -961,8 +962,69 @@ typedef enum
 {
   G_BUS_NAME_OWNER_FLAGS_NONE = 0,                    /*< nick=none >*/
   G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT = (1<<0),  /*< nick=allow-replacement >*/
-  G_BUS_NAME_OWNER_FLAGS_REPLACE = (1<<1)            /*< nick=replace >*/
+  G_BUS_NAME_OWNER_FLAGS_REPLACE = (1<<1),            /*< nick=replace >*/
+  G_BUS_NAME_OWNER_FLAGS_DO_NOT_QUEUE = (1<<2)        /*< nick=do-not-queue >*/
 } GBusNameOwnerFlags;
+
+/**
+ * GBusRequestNameReplyFlags:
+ * @G_BUS_REQUEST_NAME_FLAGS_ERROR: Error flag.
+ * @G_BUS_REQUEST_NAME_FLAGS_PRIMARY_OWNER: Caller is now the primary owner of the name, replacing
+ * any previous owner.
+ * @G_BUS_REQUEST_NAME_FLAGS_IN_QUEUE: The name already had an owner, the application will be
+ * placed in a queue.
+ * @G_BUS_REQUEST_NAME_FLAGS_EXISTS: The name already has an owner.
+ * @G_BUS_REQUEST_NAME_FLAGS_ALREADY_OWNER: The application trying to request ownership of a name
+ * is already the owner of it.
+ *
+ * Flags used in g_dbus_request_name().
+ *
+ * Since: 2.44
+ */
+typedef enum
+{
+  G_BUS_REQUEST_NAME_FLAGS_ERROR = 0,
+  G_BUS_REQUEST_NAME_FLAGS_PRIMARY_OWNER = 1,
+  G_BUS_REQUEST_NAME_FLAGS_IN_QUEUE = 2,
+  G_BUS_REQUEST_NAME_FLAGS_EXISTS = 3,
+  G_BUS_REQUEST_NAME_FLAGS_ALREADY_OWNER = 4
+} GBusRequestNameReplyFlags;
+
+/**
+ * GBusReleaseNameReplyFlags:
+ * @G_BUS_RELEASE_NAME_FLAGS_ERROR: Error flag.
+ * @G_BUS_RELEASE_NAME_FLAGS_RELEASED: The caller has released his claim on the given name.
+ * @G_BUS_RELEASE_NAME_FLAGS_NON_EXISTENT: The given name does not exist on this bus.
+ * @G_BUS_RELEASE_NAME_FLAGS_NOT_OWNER: The caller not waiting in the queue to own this name.
+ *
+ * Flags used in g_dbus_release_name().
+ *
+ * Since: 2.44
+ */
+typedef enum
+{
+  G_BUS_RELEASE_NAME_FLAGS_ERROR = 0,
+  G_BUS_RELEASE_NAME_FLAGS_RELEASED = 1,
+  G_BUS_RELEASE_NAME_FLAGS_NON_EXISTENT = 2,
+  G_BUS_RELEASE_NAME_FLAGS_NOT_OWNER = 3
+} GBusReleaseNameReplyFlags;
+
+/**
+ * GBusStartServiceReplyFlags:
+ * @G_BUS_START_SERVICE_REPLY_ERROR: Error flag.
+ * @G_BUS_START_SERVICE_REPLY_SUCCESS: The service was successfully started.
+ * @G_BUS_START_SERVICE_REPLY_ALREADY_RUNNING: A connection already owns the given name.
+ *
+ * Flags used in g_dbus_start_service_by_name().
+ *
+ * Since: 2.44
+ */
+typedef enum
+{
+  G_BUS_START_SERVICE_REPLY_ERROR = 0,
+  G_BUS_START_SERVICE_REPLY_SUCCESS = 1,
+  G_BUS_START_SERVICE_REPLY_ALREADY_RUNNING = 2
+} GBusStartServiceReplyFlags;
 
 /**
  * GBusNameWatcherFlags:

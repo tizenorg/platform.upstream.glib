@@ -3631,3 +3631,10 @@ g_dbus_message_copy (GDBusMessage  *message,
 #endif
   return ret;
 }
+
+void
+g_dbus_message_init_header_iter (GDBusMessage   *message,
+                                 GHashTableIter *iter)
+{
+  g_hash_table_iter_init (iter, message->headers);
+}
