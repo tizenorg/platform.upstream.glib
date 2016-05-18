@@ -3,7 +3,7 @@
 %define keepstatic 1
 
 Name:           glib2
-Version:        2.44.1
+Version:        2.48.1
 Release:        0
 # FIXME: find out if tapsets should really be in devel package or in main package
 Summary:        General-Purpose Utility Library
@@ -320,6 +320,8 @@ cp %{S:6} %{buildroot}%{_sysconfdir}/rpm
 %{_bindir}/gobject-query
 %{_bindir}/gtester
 %{_bindir}/gtester-report
+%dir %{_datadir}/gettext
+%{_datadir}/gettext/its/
 %dir %{_datadir}/aclocal
 %{_datadir}/aclocal/glib-2.0.m4
 %{_datadir}/aclocal/glib-gettext.m4
