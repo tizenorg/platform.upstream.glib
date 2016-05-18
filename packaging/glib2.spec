@@ -8,7 +8,7 @@ Version:        2.48.1
 Release:        0
 # FIXME: find out if tapsets should really be in devel package or in main package
 Summary:        General-Purpose Utility Library
-License:        LGPL-2.1+
+License:        LGPL-2.0+
 Group:          Base/Libraries
 Url:            http://www.gtk.org/
 Source:         http://download.gnome.org/sources/glib/%{baseline}/%{name}-%{version}.tar.xz
