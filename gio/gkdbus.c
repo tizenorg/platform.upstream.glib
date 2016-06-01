@@ -25,6 +25,7 @@
 #include "config.h"
 #include "gkdbus.h"
 #include "glib-unix.h"
+#include "glib-linux.h"
 #include "glibintl.h"
 #include "kdbus.h"
 
@@ -37,7 +38,7 @@
 #include <stdint.h>
 
 #ifdef HAVE_SYS_FILIO_H
-# include <sys/filio.h>
+#include <sys/filio.h>
 #endif
 
 #ifdef HAVE_SYS_UIO_H
@@ -64,6 +65,7 @@
 #define KDBUS_MSG_MAX_SIZE         8192
 #define KDBUS_DEFAULT_TIMEOUT_NS   5000000000LU
 #define KDBUS_POOL_SIZE            (16 * 1024LU * 1024LU)
+#define KDBUS_MEMFD_THRESHOLD      (512 * 1024LU)
 #define KDBUS_ALIGN8(l)            (((l) + 7) & ~7)
 #define KDBUS_ALIGN8_PTR(p)        ((void*) (uintptr_t)(p))
 
@@ -2647,7 +2649,7 @@ g_kdbus_decode_dbus_msg (GKDBusWorker      *worker,
   KDBUS_ITEM_FOREACH(item, msg, items)
     {
       if (item->size < KDBUS_ITEM_HEADER_SIZE)
-        g_error("[KDBUS] %llu bytes - invalid data record\n", item->size);
+        g_error("kdbus: %llu bytes - invalid data record", item->size);
 
       data_size = item->size - KDBUS_ITEM_HEADER_SIZE;
 
@@ -3044,7 +3046,9 @@ _g_kdbus_send (GKDBusWorker  *worker,
   gsize send_size;
   const gchar *dst_name;
   gboolean result;
-  int cancel_fd;
+
+  gint memfd_fd;
+  gint cancel_fd;
 
   g_return_val_if_fail (G_IS_KDBUS_WORKER (worker), FALSE);
 
@@ -3053,6 +3057,8 @@ _g_kdbus_send (GKDBusWorker  *worker,
 
   msg = alloca (KDBUS_MSG_MAX_SIZE);
   result = TRUE;
+
+  memfd_fd = -1;
   cancel_fd = -1;
 
   /* fill in as we go... */
@@ -3206,33 +3212,61 @@ _g_kdbus_send (GKDBusWorker  *worker,
 
         if (vector.gbytes)
           {
-            gint fd;
+            const guchar *bytes_data;
+            gboolean use_memfd;
+            gsize bytes_size;
 
-            fd = g_bytes_get_zero_copy_fd (vector.gbytes);
+            use_memfd = FALSE;
+            bytes_data = g_bytes_get_data (vector.gbytes, &bytes_size);
 
-            if (fd >= 0)
+            /* check whether we can and should use memfd */
+            if ((msg->dst_id != KDBUS_DST_ID_BROADCAST) && (bytes_size > KDBUS_MEMFD_THRESHOLD))
+              use_memfd = TRUE;
+
+            if (use_memfd)
               {
-                const guchar *bytes_data;
-                gsize bytes_size;
+                const guchar *bytes_data_wr;
+                gint64 wr;
 
-                bytes_data = g_bytes_get_data (vector.gbytes, &bytes_size);
-
-                if (bytes_data <= vector.data.pointer && vector.data.pointer + vector.size <= bytes_data + bytes_size)
+                /* create memfd object */
+                memfd_fd = glib_linux_memfd_create ("glib-kdbus-memfd", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+                if (memfd_fd == -1 && errno == EINVAL)
                   {
-                    if (!g_kdbus_msg_append_payload_memfd (msg, fd, vector.data.pointer - bytes_data, vector.size))
-                      goto need_compact;
+                    g_warning ("kdbus: missing kernel memfd support");
+                    use_memfd = FALSE; /* send as PAYLOAD_VEC item */
                   }
                 else
                   {
-                    if (!g_kdbus_msg_append_payload_vec (msg, vector.data.pointer, vector.size))
-                      goto need_compact;
-                  }
-              }
-            else
-              {
-                if (!g_kdbus_msg_append_payload_vec (msg, vector.data.pointer, vector.size))
-                  goto need_compact;
-              }
+                    /* write data to memfd */
+                    bytes_data_wr = bytes_data;
+                    while (bytes_size)
+                      {
+                        wr = write (memfd_fd, bytes_data_wr, bytes_size);
+                        if (wr < 0)
+                          g_warning ("kdbus: writing to memfd failed: (%d) %m", errno);
+
+                        bytes_size -= wr;
+                        bytes_data_wr += wr;
+                      }
+
+                    /* seal memfd */
+                    if (!g_unix_fd_ensure_zero_copy_safe (memfd_fd))
+                      {
+                        g_warning ("kdbus: memfd sealing failed");
+			use_memfd = FALSE; /* send as PAYLOAD_VEC item */
+                      }
+                    else
+                      {
+                        /* attach memfd item */
+                        if (!g_kdbus_msg_append_payload_memfd (msg, memfd_fd, vector.data.pointer - bytes_data, vector.size))
+                          goto need_compact;
+                      }
+                  } /* memfd_fd == -1 */
+              } /* use_memfd */
+
+            if (!use_memfd)
+              if (!g_kdbus_msg_append_payload_vec (msg, vector.data.pointer, vector.size))
+                goto need_compact;
           }
         else
           if (!g_kdbus_msg_append_payload_vec (msg, body_vectors.extra_bytes->data + vector.data.offset, vector.size))
@@ -3431,6 +3465,9 @@ out:
   if (cancel_fd != -1)
     g_cancellable_release_fd (cancellable);
 
+  if (memfd_fd != -1)
+    close (memfd_fd);
+
   GLIB_PRIVATE_CALL(g_variant_vectors_deinit) (&body_vectors);
 
   return result;
@@ -3444,6 +3481,12 @@ need_compact:
   g_warning ("kdbus: message serialisation error");
   g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_FAILED,
                "message serialisation error");
+
+  if (cancel_fd != -1)
+    g_cancellable_release_fd (cancellable);
+
+  if (memfd_fd != -1)
+    close (memfd_fd);
 
   GLIB_PRIVATE_CALL(g_variant_vectors_deinit) (&body_vectors);
   return FALSE;
