@@ -634,14 +634,7 @@ static void
 g_kdbus_close_msg (GKDBusWorker      *worker,
                    struct kdbus_msg  *msg)
 {
-  struct kdbus_item *item;
   guint64 offset;
-
-  KDBUS_ITEM_FOREACH (item, msg, items)
-    {
-      if (item->type == KDBUS_ITEM_PAYLOAD_MEMFD)
-        close (item->memfd.fd);
-    }
 
   offset = (guint8 *)msg - (guint8 *)worker->kdbus_buffer;
   g_kdbus_free_data (worker, offset);
