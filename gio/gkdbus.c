@@ -1632,7 +1632,7 @@ g_kdbus_bloom_add_pair (GKDBusWorker  *worker,
   gsize size;
 
   size = strlen(parameter) + strlen(value) + 1;
-  if (size > 1024)
+  if (size >= 1024)
     return;
 
   strcpy(stpcpy(stpcpy(buf, parameter), ":"), value);
@@ -1650,7 +1650,7 @@ g_kdbus_bloom_add_prefixes (GKDBusWorker  *worker,
   gsize size;
 
   size = strlen(parameter) + strlen(value) + 1;
-  if (size > 1024)
+  if (size >= 1024)
     return;
 
   strcpy(stpcpy(stpcpy(buf, parameter), ":"), value);
