@@ -3223,7 +3223,7 @@ _g_kdbus_send (GKDBusWorker  *worker,
 
                 /* create memfd object */
                 memfd_fd = glib_linux_memfd_create ("glib-kdbus-memfd", MFD_CLOEXEC | MFD_ALLOW_SEALING);
-                if (memfd_fd == -1 && errno == EINVAL)
+                if (memfd_fd == -1)
                   {
                     g_warning ("kdbus: missing kernel memfd support");
                     use_memfd = FALSE; /* send as PAYLOAD_VEC item */
@@ -3474,9 +3474,6 @@ need_compact:
   g_warning ("kdbus: message serialisation error");
   g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_FAILED,
                "message serialisation error");
-
-  if (cancel_fd != -1)
-    g_cancellable_release_fd (cancellable);
 
   if (memfd_fd != -1)
     close (memfd_fd);
