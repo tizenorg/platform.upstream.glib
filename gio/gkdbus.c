@@ -3275,10 +3275,7 @@ _g_kdbus_send (GKDBusWorker  *worker,
 
   if ((msg->flags) & KDBUS_MSG_EXPECT_REPLY)
     {
-      if (timeout_msec != -1)
-        msg->timeout_ns = 1000LU * g_get_monotonic_time() + (timeout_msec * 1000000LLU);
-      else
-        msg->timeout_ns = 1000LU * g_get_monotonic_time() + KDBUS_DEFAULT_TIMEOUT_NS;
+      msg->timeout_ns = 1000LU * g_get_monotonic_time() + KDBUS_DEFAULT_TIMEOUT_NS;
     }
   else
     {
