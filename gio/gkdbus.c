@@ -63,7 +63,7 @@
 #include "gunixfdmessage.h"
 
 #define KDBUS_MSG_MAX_SIZE         8192
-#define KDBUS_DEFAULT_TIMEOUT_NS   5000000000LU
+#define KDBUS_DEFAULT_TIMEOUT_NS   50000000000LLU
 #define KDBUS_POOL_SIZE            (16 * 1024LU * 1024LU)
 #define KDBUS_MEMFD_THRESHOLD      (512 * 1024LU)
 #define KDBUS_ALIGN8(l)            (((l) + 7) & ~7)
@@ -3276,7 +3276,7 @@ _g_kdbus_send (GKDBusWorker  *worker,
   if ((msg->flags) & KDBUS_MSG_EXPECT_REPLY)
     {
       if (timeout_msec != -1)
-        msg->timeout_ns = 1000LU * g_get_monotonic_time() + (timeout_msec * 1000000LU);
+        msg->timeout_ns = 1000LU * g_get_monotonic_time() + (timeout_msec * 1000000LLU);
       else
         msg->timeout_ns = 1000LU * g_get_monotonic_time() + KDBUS_DEFAULT_TIMEOUT_NS;
     }
