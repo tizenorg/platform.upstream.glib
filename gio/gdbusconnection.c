@@ -8058,3 +8058,10 @@ g_bus_get_finish (GAsyncResult  *res,
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
+#ifdef _TV_PROFILE
+static void __attribute__((constructor)) glib_type_dbus_connection_gc( void )
+{
+	GObject* temp = g_type_class_ref(G_TYPE_DBUS_CONNECTION);
+	g_type_class_unref(temp);
+}
+#endif

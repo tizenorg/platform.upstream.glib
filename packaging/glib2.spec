@@ -186,6 +186,9 @@ fi
 
 %build
 NOCONFIGURE=1 ./autogen.sh
+%if "%{?profile}" == "tv"
+export CFLAGS+=" -D_TV_PROFILE"
+%endif
 %configure \
     --enable-static \
 %if 0%{?with_systemtap}
