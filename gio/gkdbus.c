@@ -3365,10 +3365,36 @@ _g_kdbus_send (GKDBusWorker  *worker,
                                          g_dbus_message_get_member (message),
                                          g_dbus_message_get_message_type (message),
                                          NULL, 0, 0);
-          if (check != 1)
+          if (check != DBUSPOLICY_RESULT_ALLOW)
             {
-              g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED,
-                           "Cannot send message - message rejected due to security policies");
+              switch (check)
+                {
+                  case DBUSPOLICY_RESULT_DENY:
+                    g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED,
+                                 "Cannot send message - message rejected due to XML security policies");
+                  break;
+
+                  case DBUSPOLICY_RESULT_DEST_NOT_AVAILABLE:
+                    g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN,
+                                 "Cannot send message - destination not known");
+                  break;
+
+                  case DBUSPOLICY_RESULT_KDBUS_ERROR:
+                    g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED,
+                                 "Cannot send message - message rejected due to internal libdbuspolicy error (kdbus)");
+                  break;
+
+                  case DBUSPOLICY_RESULT_CYNARA_ERROR:
+                    g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED,
+                                 "Cannot send message - message rejected due to internal libdbuspolicy error (Cynara)");
+                  break;
+
+                  default:
+                    g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED,
+                                 "Cannot send message - unknown libdbuspolicy error");
+                  break;
+                }
+
               result = FALSE;
               goto out;
             }
